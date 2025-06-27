@@ -1,0 +1,10 @@
+{
+	"id": "tag-renamer",
+	"name": "Tag Renamer",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Rename tags across your entire vault with ease.",
+	"author": "",
+	"authorUrl": "",
+	"isDesktopOnly": false
+}
