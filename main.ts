@@ -42,6 +42,18 @@ export default class TagRenamerPlugin extends Plugin {
 				this.app.setting.openTabById('tag-renamer');
 			}
 		});
+
+		// Add command to remove duplicate tags from current file
+		this.addCommand({
+			id: 'remove-duplicate-tags-current',
+			name: 'Remove duplicate tags from current file',
+			editorCallback: async (editor: Editor, view: MarkdownView) => {
+				const file = view.file;
+				if (file) {
+					await this.removeDuplicatesFromFile(file);
+				}
+			}
+		});
 		
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new TagRenamerSettingTab(this.app, this));
@@ -56,6 +68,15 @@ export default class TagRenamerPlugin extends Plugin {
 							.setIcon('tag')
 							.onClick(() => {
 								this.showRenameConfirmation(folder);
+							});
+					});
+					
+					menu.addItem((item) => {
+						item
+							.setTitle('Remove duplicate tags in folder')
+							.setIcon('layers')
+							.onClick(() => {
+								this.showDuplicateRemovalConfirmation(folder);
 							});
 					});
 				}
@@ -86,6 +107,97 @@ export default class TagRenamerPlugin extends Plugin {
 
 	showRenameConfirmation(folder: TFolder) {
 		new RenameConfirmationModal(this.app, this, folder).open();
+	}
+
+	showDuplicateRemovalConfirmation(folder: TFolder) {
+		new DuplicateRemovalConfirmationModal(this.app, this, folder).open();
+	}
+
+	async removeDuplicatesFromFile(file: TFile): Promise<boolean> {
+		try {
+			const content = await this.app.vault.read(file);
+			const modifiedContent = this.removeDuplicateTagsFromContent(content);
+			
+			if (modifiedContent !== content) {
+				await this.app.vault.modify(file, modifiedContent);
+				new Notice(`Removed duplicate tags from ${file.name}`);
+				return true;
+			} else {
+				new Notice(`No duplicate tags found in ${file.name}`);
+				return false;
+			}
+		} catch (error) {
+			console.error(`Error processing file ${file.path}:`, error);
+			new Notice(`Error processing ${file.name}: ${error.message}`);
+			return false;
+		}
+	}
+
+	async removeDuplicatesFromFolder(folder: TFolder) {
+		const files = this.getAllMarkdownFiles(folder);
+		let processedCount = 0;
+		let modifiedCount = 0;
+
+		new Notice(`Processing ${files.length} files for duplicate tags...`);
+
+		for (const file of files) {
+			const wasModified = await this.removeDuplicatesFromFile(file);
+			if (wasModified) {
+				modifiedCount++;
+			}
+			processedCount++;
+		}
+
+		new Notice(`Completed! Processed ${processedCount} files, removed duplicates from ${modifiedCount} files.`);
+	}
+
+	removeDuplicateTagsFromContent(content: string): string {
+		const frontmatterRegex = /^---\n(.*?)\n---/s;
+		const match = content.match(frontmatterRegex);
+		
+		if (!match) return content;
+
+		let frontmatter = match[1];
+		let modified = false;
+
+		// Process tag arrays (tags: [tag1, tag2, tag1])
+		frontmatter = frontmatter.replace(/^tags:\s*\[(.*?)\]$/gm, (line, tagContent) => {
+			const tags = tagContent.split(',').map((tag: string) => tag.trim().replace(/['"]/g, ''));
+			const uniqueTags = [...new Set(tags.filter((tag: string) => tag.length > 0))];
+			
+			if (uniqueTags.length !== tags.filter((tag: string) => tag.length > 0).length) {
+				modified = true;
+				const formattedTags = uniqueTags.map((tag: string) => `"${tag}"`).join(', ');
+				return `tags: [${formattedTags}]`;
+			}
+			return line;
+		});
+
+		// Process tag lists (tags:\n  - tag1\n  - tag2\n  - tag1)
+		const tagListRegex = /^tags:\s*\n((?:\s*-\s*[^\n]+\n?)+)/gm;
+		frontmatter = frontmatter.replace(tagListRegex, (block) => {
+			const tagLines = block.match(/^\s*-\s*([^\n]+)$/gm);
+			if (tagLines) {
+				const tags = tagLines.map(line => 
+					line.replace(/^\s*-\s*/, '').trim().replace(/['"]/g, '')
+				).filter(tag => tag.length > 0);
+				
+				const uniqueTags = [...new Set(tags)];
+				
+				if (uniqueTags.length !== tags.length) {
+					modified = true;
+					const newTagLines = uniqueTags.map((tag: string) => `  - "${tag}"`).join('\n');
+					return `tags:\n${newTagLines}\n`;
+				}
+			}
+			return block;
+		});
+
+		if (modified) {
+			return content.replace(frontmatterRegex, `---\n${frontmatter}\n---`);
+		}
+
+		return content;
 	}
 
 	async renameTags(folder: TFolder) {
@@ -315,6 +427,63 @@ class RenameConfirmationModal extends Modal {
 				this.plugin.renameTags(this.folder);
 			};
 		}
+	}
+
+	onClose() {
+		const {contentEl} = this;
+		contentEl.empty();
+	}
+}
+
+class DuplicateRemovalConfirmationModal extends Modal {
+	plugin: TagRenamerPlugin;
+	folder: TFolder;
+
+	constructor(app: App, plugin: TagRenamerPlugin, folder: TFolder) {
+		super(app);
+		this.plugin = plugin;
+		this.folder = folder;
+	}
+
+	onOpen() {
+		const {contentEl} = this;
+		contentEl.empty();
+
+		contentEl.createEl('h2', {text: 'Remove Duplicate Tags - Warning'});
+		
+		contentEl.createEl('p', {
+			text: `⚠️ This action will modify files in the folder "${this.folder.name}" and all its subfolders.`
+		});
+
+		contentEl.createEl('p', {
+			text: 'IMPORTANT: Please backup your vault before proceeding. This operation cannot be undone.'
+		});
+
+		contentEl.createEl('p', {
+			text: 'This will remove duplicate tags from the frontmatter of all markdown files in this folder.'
+		});
+
+		contentEl.createEl('p', {
+			text: 'Example: tags: [work, personal, work] → tags: [work, personal]',
+			cls: 'setting-item-description'
+		});
+
+		const buttonContainer = contentEl.createDiv('modal-button-container');
+		
+		const cancelButton = buttonContainer.createEl('button', {
+			text: 'Cancel',
+			cls: 'mod-cta'
+		});
+		cancelButton.onclick = () => this.close();
+
+		const proceedButton = buttonContainer.createEl('button', {
+			text: 'Remove Duplicates',
+			cls: 'mod-warning'
+		});
+		proceedButton.onclick = () => {
+			this.close();
+			this.plugin.removeDuplicatesFromFolder(this.folder);
+		};
 	}
 
 	onClose() {
