@@ -3,6 +3,7 @@ import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Set
 interface RenamePattern {
 	search: string;
 	replace: string;
+	removeMode?: boolean; // true = remove tag, false/undefined = replace tag
 }
 
 interface TagRenamerSettings {
@@ -262,42 +263,98 @@ export default class TagRenamerPlugin extends Plugin {
 
 		// Process tag arrays (tags: [tag1, tag2])
 		frontmatter = frontmatter.replace(/^tags:\s*\[(.*?)\]$/gm, (line, tagContent) => {
-			let newTagContent = tagContent;
+			let tags = tagContent.split(',').map((tag: string) => tag.trim().replace(/['"]/g, ''));
+			let originalLength = tags.length;
+			
 			for (const pattern of patterns) {
-				const searchRegex = new RegExp(`\\b${this.escapeRegex(pattern.search)}\\b`, 'g');
-				if (searchRegex.test(newTagContent)) {
-					newTagContent = newTagContent.replace(searchRegex, pattern.replace);
-					modified = true;
+				const searchRegex = new RegExp(`^${this.escapeRegex(pattern.search)}$`);
+				
+				if (pattern.removeMode) {
+					// Remove matching tags
+					tags = tags.filter((tag: string) => !searchRegex.test(tag.trim()));
+				} else {
+					// Replace matching tags
+					tags = tags.map((tag: string) => {
+						if (searchRegex.test(tag.trim())) {
+							modified = true;
+							return pattern.replace;
+						}
+						return tag;
+					});
 				}
 			}
-			return `tags: [${newTagContent}]`;
+			
+			if (tags.length !== originalLength) {
+				modified = true;
+			}
+			
+			const formattedTags = tags.filter((tag: string) => tag.length > 0).map((tag: string) => `"${tag}"`).join(', ');
+			return `tags: [${formattedTags}]`;
 		});
 
 		// Process tag lists (tags:\n  - tag1\n  - tag2)
-		frontmatter = frontmatter.replace(/^(\s*-\s+)([^\n]+)$/gm, (line, prefix, tag) => {
-			let newTag = tag;
-			for (const pattern of patterns) {
-				const searchRegex = new RegExp(`\\b${this.escapeRegex(pattern.search)}\\b`, 'g');
-				if (searchRegex.test(newTag)) {
-					newTag = newTag.replace(searchRegex, pattern.replace);
+		const tagListRegex = /^tags:\s*\n((?:\s*-\s*[^\n]+\n?)+)/gm;
+		frontmatter = frontmatter.replace(tagListRegex, (block) => {
+			const tagLines = block.match(/^\s*-\s*([^\n]+)$/gm);
+			if (tagLines) {
+				let tags = tagLines.map(line => 
+					line.replace(/^\s*-\s*/, '').trim().replace(/['"]/g, '')
+				).filter(tag => tag.length > 0);
+				
+				let originalLength = tags.length;
+				
+				for (const pattern of patterns) {
+					const searchRegex = new RegExp(`^${this.escapeRegex(pattern.search)}$`);
+					
+					if (pattern.removeMode) {
+						// Remove matching tags
+						tags = tags.filter(tag => !searchRegex.test(tag));
+					} else {
+						// Replace matching tags
+						tags = tags.map(tag => {
+							if (searchRegex.test(tag)) {
+								modified = true;
+								return pattern.replace;
+							}
+							return tag;
+						});
+					}
+				}
+				
+				if (tags.length !== originalLength) {
 					modified = true;
 				}
+				
+				if (tags.length === 0) {
+					return ''; // Remove the entire tags section if no tags remain
+				}
+				
+				const newTagLines = tags.map((tag: string) => `  - "${tag}"`).join('\n');
+				return `tags:\n${newTagLines}\n`;
 			}
-			return `${prefix}${newTag}`;
+			return block;
 		});
 
 		// Process single tag line (tag: tagname)
 		frontmatter = frontmatter.replace(/^tag:\s*(.+)$/gm, (line, tag) => {
-			let newTag = tag;
+			const cleanTag = tag.trim().replace(/['"]/g, '');
+			
 			for (const pattern of patterns) {
-				const searchRegex = new RegExp(`\\b${this.escapeRegex(pattern.search)}\\b`, 'g');
-				if (searchRegex.test(newTag)) {
-					newTag = newTag.replace(searchRegex, pattern.replace);
+				const searchRegex = new RegExp(`^${this.escapeRegex(pattern.search)}$`);
+				if (searchRegex.test(cleanTag)) {
 					modified = true;
+					if (pattern.removeMode) {
+						return ''; // Remove the entire tag line
+					} else {
+						return `tag: "${pattern.replace}"`;
+					}
 				}
 			}
-			return `tag: ${newTag}`;
+			return line;
 		});
+
+		// Clean up empty lines left by removed tags
+		frontmatter = frontmatter.replace(/\n\n+/g, '\n').replace(/^\n+|\n+$/g, '');
 
 		if (modified) {
 			return content.replace(frontmatterRegex, `---\n${frontmatter}\n---`);
@@ -399,6 +456,9 @@ export default class TagRenamerPlugin extends Plugin {
 			if (typeof pattern.search !== 'string' || typeof pattern.replace !== 'string') {
 				return { valid: false, error: `Pattern ${i + 1} must have search and replace strings` };
 			}
+			if (pattern.removeMode !== undefined && typeof pattern.removeMode !== 'boolean') {
+				return { valid: false, error: `Pattern ${i + 1} removeMode must be boolean` };
+			}
 		}
 
 		return { valid: true };
@@ -413,7 +473,12 @@ export default class TagRenamerPlugin extends Plugin {
 				return { success: false, error: validation.error };
 			}
 
-			const importedPatterns: RenamePattern[] = data.patterns;
+			// Ensure backwards compatibility by setting removeMode to false if not specified
+			const importedPatterns: RenamePattern[] = data.patterns.map((pattern: any) => ({
+				search: pattern.search,
+				replace: pattern.replace,
+				removeMode: pattern.removeMode || false
+			}));
 			
 			if (mergeMode) {
 				// Add new patterns to existing ones
@@ -628,6 +693,11 @@ class TagRenamerSettingTab extends PluginSettingTab {
 			.setDesc('Define patterns to rename tags across your vault')
 			.setHeading();
 
+		// Add column headers
+		if (this.plugin.settings.renamePatterns.length > 0) {
+			this.createPatternHeaders(containerEl);
+		}
+
 		this.plugin.settings.renamePatterns.forEach((pattern, index) => {
 			this.createPatternSetting(containerEl, pattern, index);
 		});
@@ -637,15 +707,55 @@ class TagRenamerSettingTab extends PluginSettingTab {
 				.setButtonText('Add Pattern')
 				.setCta()
 				.onClick(() => {
-					this.plugin.settings.renamePatterns.push({ search: '', replace: '' });
+					this.plugin.settings.renamePatterns.push({ search: '', replace: '', removeMode: false });
 					this.plugin.saveSettings();
 					this.display();
 				}));
 	}
 
+	createPatternHeaders(containerEl: HTMLElement): void {
+		const headerSetting = new Setting(containerEl)
+			.setClass('pattern-header');
+
+		// Create header layout
+		const headerControl = headerSetting.settingEl.querySelector('.setting-item-control') as HTMLElement;
+		if (headerControl) {
+			headerControl.innerHTML = '';
+			headerControl.style.cssText = `
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				font-weight: bold;
+				font-size: 12px;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			`;
+
+			const searchHeader = headerControl.createEl('div', {text: 'Search'});
+			searchHeader.style.width = '35%';
+
+			const removeHeader = headerControl.createEl('div', {text: 'Remove'});
+			removeHeader.style.width = '60px';
+			removeHeader.style.textAlign = 'center';
+
+			const replaceHeader = headerControl.createEl('div', {text: 'Replace With'});
+			replaceHeader.style.width = '35%';
+
+			const actionHeader = headerControl.createEl('div', {text: 'Action'});
+			actionHeader.style.width = '40px';
+			actionHeader.style.textAlign = 'center';
+		}
+
+		// Hide the setting name area for headers
+		const settingInfo = headerSetting.settingEl.querySelector('.setting-item-info') as HTMLElement;
+		if (settingInfo) {
+			settingInfo.style.display = 'none';
+		}
+	}
+
 	createPatternSetting(containerEl: HTMLElement, pattern: RenamePattern, index: number): void {
 		const setting = new Setting(containerEl)
-			.setName(`Pattern ${index + 1}`)
 			.addText(text => text
 				.setPlaceholder('Search for...')
 				.setValue(pattern.search)
@@ -653,9 +763,18 @@ class TagRenamerSettingTab extends PluginSettingTab {
 					this.plugin.settings.renamePatterns[index].search = value;
 					await this.plugin.saveSettings();
 				}))
+			.addToggle(toggle => toggle
+				.setValue(pattern.removeMode || false)
+				.setTooltip('Enable to remove tag instead of replacing')
+				.onChange(async (value) => {
+					this.plugin.settings.renamePatterns[index].removeMode = value;
+					await this.plugin.saveSettings();
+					this.display(); // Refresh to update UI state
+				}))
 			.addText(text => text
-				.setPlaceholder('Replace with...')
+				.setPlaceholder(pattern.removeMode ? 'Remove mode (ignored)' : 'Replace with...')
 				.setValue(pattern.replace)
+				.setDisabled(pattern.removeMode || false)
 				.onChange(async (value) => {
 					this.plugin.settings.renamePatterns[index].replace = value;
 					await this.plugin.saveSettings();
@@ -669,12 +788,30 @@ class TagRenamerSettingTab extends PluginSettingTab {
 					this.display();
 				}));
 
-		// Style the text inputs to be side by side
-		const textInputs = setting.settingEl.querySelectorAll('input[type="text"]');
-		if (textInputs.length === 2) {
-			(textInputs[0] as HTMLElement).style.width = '45%';
-			(textInputs[0] as HTMLElement).style.marginRight = '10px';
-			(textInputs[1] as HTMLElement).style.width = '45%';
+		// Style the components to align with headers
+		const settingControl = setting.settingEl.querySelector('.setting-item-control') as HTMLElement;
+		if (settingControl) {
+			settingControl.style.cssText = `
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			`;
+			
+			const elements = settingControl.children;
+			if (elements.length >= 4) {
+				(elements[0] as HTMLElement).style.width = '35%'; // Search input
+				(elements[1] as HTMLElement).style.width = '60px'; // Toggle
+				(elements[1] as HTMLElement).style.textAlign = 'center';
+				(elements[2] as HTMLElement).style.width = '35%'; // Replace input
+				(elements[3] as HTMLElement).style.width = '40px'; // Delete button
+				(elements[3] as HTMLElement).style.textAlign = 'center';
+			}
+		}
+
+		// Hide the setting name area
+		const settingInfo = setting.settingEl.querySelector('.setting-item-info') as HTMLElement;
+		if (settingInfo) {
+			settingInfo.style.display = 'none';
 		}
 	}
 
@@ -731,7 +868,7 @@ class TagRenamerSettingTab extends PluginSettingTab {
 	}
 
 	addPatternWithTag(tag: string): void {
-		this.plugin.settings.renamePatterns.push({ search: tag, replace: '' });
+		this.plugin.settings.renamePatterns.push({ search: tag, replace: '', removeMode: false });
 		this.plugin.saveSettings();
 		this.display();
 		new Notice(`Added "${tag}" to search patterns`);
