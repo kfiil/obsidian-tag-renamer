@@ -815,6 +815,16 @@ class TagRenamerSettingTab extends PluginSettingTab {
 		}
 	}
 
+	getMappedTags(): Set<string> {
+		const mappedTags = new Set<string>();
+		for (const pattern of this.plugin.settings.renamePatterns) {
+			if (pattern.search && pattern.search.trim()) {
+				mappedTags.add(pattern.search.trim());
+			}
+		}
+		return mappedTags;
+	}
+
 	displayFoundTags(container: HTMLElement): void {
 		// Remove existing tag display
 		const existingTagsDiv = container.querySelector('.tag-discovery-results');
@@ -824,10 +834,29 @@ class TagRenamerSettingTab extends PluginSettingTab {
 
 		if (this.allTags.length === 0) return;
 
+		// Filter out tags that are already mapped in patterns
+		const mappedTags = this.getMappedTags();
+		const unmappedTags = this.allTags.filter(tag => !mappedTags.has(tag));
+
 		const tagsDiv = container.createDiv('tag-discovery-results');
-		tagsDiv.createEl('h4', {text: `Found Tags (${this.allTags.length})`});
+		
+		if (unmappedTags.length === 0) {
+			tagsDiv.createEl('h4', {text: 'Found Tags'});
+			tagsDiv.createEl('p', {
+				text: `All ${this.allTags.length} discovered tags are already mapped in patterns above.`,
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		tagsDiv.createEl('h4', {text: `Available Tags (${unmappedTags.length})`});
+		
+		const subtitleText = mappedTags.size > 0 
+			? `Click to add patterns • ${mappedTags.size} already mapped, ${unmappedTags.length} available`
+			: 'Click on any tag to add it to a new pattern search field';
+			
 		tagsDiv.createEl('p', {
-			text: 'Click on any tag to add it to a new pattern search field',
+			text: subtitleText,
 			cls: 'setting-item-description'
 		});
 
@@ -837,7 +866,7 @@ class TagRenamerSettingTab extends PluginSettingTab {
 		tagContainer.style.gap = '5px';
 		tagContainer.style.marginTop = '10px';
 
-		this.allTags.forEach(tag => {
+		unmappedTags.forEach(tag => {
 			const tagEl = tagContainer.createEl('span', {
 				text: tag,
 				cls: 'tag-pill'
