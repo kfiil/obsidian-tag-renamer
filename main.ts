@@ -702,15 +702,32 @@ class TagRenamerSettingTab extends PluginSettingTab {
 			this.createPatternSetting(containerEl, pattern, index);
 		});
 
-		new Setting(containerEl)
-			.addButton(button => button
-				.setButtonText('Add Pattern')
-				.setCta()
-				.onClick(() => {
-					this.plugin.settings.renamePatterns.push({ search: '', replace: '', removeMode: false });
-					this.plugin.saveSettings();
+		// Action buttons
+		const actionSetting = new Setting(containerEl);
+		
+		// Add sort button if there are patterns to sort
+		if (this.plugin.settings.renamePatterns.length > 1) {
+			actionSetting.addButton(button => button
+				.setButtonText('Sort Patterns')
+				.setIcon('arrow-up-down')
+				.setTooltip('Sort by mode (replace first, then remove) and alphabetically')
+				.onClick(async () => {
+					this.sortPatterns();
+					await this.plugin.saveSettings();
 					this.display();
+					new Notice('Patterns sorted successfully');
 				}));
+		}
+		
+		// Add pattern button
+		actionSetting.addButton(button => button
+			.setButtonText('Add Pattern')
+			.setCta()
+			.onClick(() => {
+				this.plugin.settings.renamePatterns.push({ search: '', replace: '', removeMode: false });
+				this.plugin.saveSettings();
+				this.display();
+			}));
 	}
 
 	createPatternHeaders(containerEl: HTMLElement): void {
@@ -823,6 +840,21 @@ class TagRenamerSettingTab extends PluginSettingTab {
 			}
 		}
 		return mappedTags;
+	}
+
+	sortPatterns(): void {
+		this.plugin.settings.renamePatterns.sort((a, b) => {
+			// First sort by mode: replace patterns (false/undefined) before remove patterns (true)
+			const aModeValue = a.removeMode ? 1 : 0;
+			const bModeValue = b.removeMode ? 1 : 0;
+			
+			if (aModeValue !== bModeValue) {
+				return aModeValue - bModeValue;
+			}
+			
+			// Then sort alphabetically by search term
+			return a.search.toLowerCase().localeCompare(b.search.toLowerCase());
+		});
 	}
 
 	displayFoundTags(container: HTMLElement): void {
