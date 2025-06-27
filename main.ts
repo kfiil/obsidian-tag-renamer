@@ -868,7 +868,9 @@ class TagRenamerSettingTab extends PluginSettingTab {
 
 		// Filter out tags that are already mapped in patterns
 		const mappedTags = this.getMappedTags();
-		const unmappedTags = this.allTags.filter(tag => !mappedTags.has(tag));
+		const unmappedTags = this.allTags.filter(tag => !mappedTags.has(tag)).sort((a, b) => 
+			a.toLowerCase().localeCompare(b.toLowerCase())
+		);
 
 		const tagsDiv = container.createDiv('tag-discovery-results');
 		
