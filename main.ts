@@ -1,11 +1,16 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
+interface RenamePattern {
+	search: string;
+	replace: string;
+}
+
 interface TagRenamerSettings {
-	mySetting: string;
+	renamePatterns: RenamePattern[];
 }
 
 const DEFAULT_SETTINGS: TagRenamerSettings = {
-	mySetting: 'default'
+	renamePatterns: []
 }
 
 export default class TagRenamerPlugin extends Plugin {
@@ -118,15 +123,60 @@ class TagRenamerSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
+		containerEl.createEl('h2', {text: 'Tag Renamer Settings'});
+
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
+			.setName('Tag Rename Patterns')
+			.setDesc('Define patterns to rename tags across your vault')
+			.setHeading();
+
+		this.plugin.settings.renamePatterns.forEach((pattern, index) => {
+			this.createPatternSetting(containerEl, pattern, index);
+		});
+
+		new Setting(containerEl)
+			.addButton(button => button
+				.setButtonText('Add Pattern')
+				.setCta()
+				.onClick(() => {
+					this.plugin.settings.renamePatterns.push({ search: '', replace: '' });
+					this.plugin.saveSettings();
+					this.display();
 				}));
+	}
+
+	createPatternSetting(containerEl: HTMLElement, pattern: RenamePattern, index: number): void {
+		const setting = new Setting(containerEl)
+			.setName(`Pattern ${index + 1}`)
+			.addText(text => text
+				.setPlaceholder('Search for...')
+				.setValue(pattern.search)
+				.onChange(async (value) => {
+					this.plugin.settings.renamePatterns[index].search = value;
+					await this.plugin.saveSettings();
+				}))
+			.addText(text => text
+				.setPlaceholder('Replace with...')
+				.setValue(pattern.replace)
+				.onChange(async (value) => {
+					this.plugin.settings.renamePatterns[index].replace = value;
+					await this.plugin.saveSettings();
+				}))
+			.addButton(button => button
+				.setIcon('trash')
+				.setTooltip('Remove pattern')
+				.onClick(() => {
+					this.plugin.settings.renamePatterns.splice(index, 1);
+					this.plugin.saveSettings();
+					this.display();
+				}));
+
+		// Style the text inputs to be side by side
+		const textInputs = setting.settingEl.querySelectorAll('input[type="text"]');
+		if (textInputs.length === 2) {
+			(textInputs[0] as HTMLElement).style.width = '45%';
+			(textInputs[0] as HTMLElement).style.marginRight = '10px';
+			(textInputs[1] as HTMLElement).style.width = '45%';
+		}
 	}
 }
