@@ -371,6 +371,64 @@ export default class TagRenamerPlugin extends Plugin {
 
 		return tags;
 	}
+
+	exportPatternsToJson(): string {
+		const exportData = {
+			version: "1.0",
+			exportDate: new Date().toISOString(),
+			pluginName: "Tag Renamer",
+			patterns: this.settings.renamePatterns
+		};
+		return JSON.stringify(exportData, null, 2);
+	}
+
+	validateImportData(data: any): { valid: boolean; error?: string } {
+		if (!data || typeof data !== 'object') {
+			return { valid: false, error: 'Invalid JSON format' };
+		}
+
+		if (!data.patterns || !Array.isArray(data.patterns)) {
+			return { valid: false, error: 'Missing or invalid patterns array' };
+		}
+
+		for (let i = 0; i < data.patterns.length; i++) {
+			const pattern = data.patterns[i];
+			if (!pattern || typeof pattern !== 'object') {
+				return { valid: false, error: `Pattern ${i + 1} is invalid` };
+			}
+			if (typeof pattern.search !== 'string' || typeof pattern.replace !== 'string') {
+				return { valid: false, error: `Pattern ${i + 1} must have search and replace strings` };
+			}
+		}
+
+		return { valid: true };
+	}
+
+	importPatternsFromJson(jsonString: string, mergeMode: boolean = false): { success: boolean; error?: string; imported?: number } {
+		try {
+			const data = JSON.parse(jsonString);
+			const validation = this.validateImportData(data);
+			
+			if (!validation.valid) {
+				return { success: false, error: validation.error };
+			}
+
+			const importedPatterns: RenamePattern[] = data.patterns;
+			
+			if (mergeMode) {
+				// Add new patterns to existing ones
+				this.settings.renamePatterns.push(...importedPatterns);
+			} else {
+				// Replace all patterns
+				this.settings.renamePatterns = importedPatterns;
+			}
+
+			this.saveSettings();
+			return { success: true, imported: importedPatterns.length };
+		} catch (error) {
+			return { success: false, error: 'Invalid JSON format: ' + error.message };
+		}
+	}
 }
 
 class RenameConfirmationModal extends Modal {
@@ -538,6 +596,32 @@ class TagRenamerSettingTab extends PluginSettingTab {
 
 		this.displayFoundTags(tagDiscoveryContainer);
 
+		// Export/Import Section
+		new Setting(containerEl)
+			.setName('Export & Import')
+			.setDesc('Share patterns between vaults or import from other sources')
+			.setHeading();
+
+		new Setting(containerEl)
+			.setName('Export Patterns')
+			.setDesc('Export all current patterns to JSON file')
+			.addButton(button => button
+				.setButtonText('Export to JSON')
+				.setIcon('download')
+				.onClick(() => {
+					this.exportPatterns();
+				}));
+
+		new Setting(containerEl)
+			.setName('Import Patterns')
+			.setDesc('Import patterns from JSON file')
+			.addButton(button => button
+				.setButtonText('Import from JSON')
+				.setIcon('upload')
+				.onClick(() => {
+					this.importPatterns();
+				}));
+
 		// Rename Patterns Section
 		new Setting(containerEl)
 			.setName('Tag Rename Patterns')
@@ -651,5 +735,168 @@ class TagRenamerSettingTab extends PluginSettingTab {
 		this.plugin.saveSettings();
 		this.display();
 		new Notice(`Added "${tag}" to search patterns`);
+	}
+
+	exportPatterns(): void {
+		if (this.plugin.settings.renamePatterns.length === 0) {
+			new Notice('No patterns to export');
+			return;
+		}
+
+		const jsonData = this.plugin.exportPatternsToJson();
+		const blob = new Blob([jsonData], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `tag-renamer-patterns-${new Date().toISOString().split('T')[0]}.json`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+		
+		new Notice(`Exported ${this.plugin.settings.renamePatterns.length} patterns to JSON`);
+	}
+
+	importPatterns(): void {
+		new ImportPatternsModal(this.app, this.plugin, this).open();
+	}
+}
+
+class ImportPatternsModal extends Modal {
+	plugin: TagRenamerPlugin;
+	settingsTab: TagRenamerSettingTab;
+
+	constructor(app: App, plugin: TagRenamerPlugin, settingsTab: TagRenamerSettingTab) {
+		super(app);
+		this.plugin = plugin;
+		this.settingsTab = settingsTab;
+	}
+
+	onOpen() {
+		const {contentEl} = this;
+		contentEl.empty();
+
+		contentEl.createEl('h2', {text: 'Import Patterns from JSON'});
+		
+		contentEl.createEl('p', {
+			text: 'Select a JSON file containing tag rename patterns to import.'
+		});
+
+		const fileInputContainer = contentEl.createDiv('file-input-container');
+		fileInputContainer.style.marginBottom = '20px';
+
+		const fileInput = fileInputContainer.createEl('input', {
+			type: 'file',
+			attr: { accept: '.json' }
+		});
+		fileInput.style.width = '100%';
+
+		const modeContainer = contentEl.createDiv('import-mode-container');
+		modeContainer.style.marginBottom = '20px';
+
+		const modeLabel = modeContainer.createEl('label', {text: 'Import Mode:'});
+		modeLabel.style.display = 'block';
+		modeLabel.style.marginBottom = '10px';
+
+		const replaceRadio = modeContainer.createEl('input', {
+			type: 'radio',
+			attr: { name: 'importMode', value: 'replace', checked: 'checked' }
+		});
+		const replaceLabel = modeContainer.createEl('label', {text: ' Replace all existing patterns'});
+		replaceLabel.style.marginLeft = '5px';
+		modeContainer.createEl('br');
+
+		const mergeRadio = modeContainer.createEl('input', {
+			type: 'radio',
+			attr: { name: 'importMode', value: 'merge' }
+		});
+		const mergeLabel = modeContainer.createEl('label', {text: ' Merge with existing patterns'});
+		mergeLabel.style.marginLeft = '5px';
+
+		const previewContainer = contentEl.createDiv('preview-container');
+		previewContainer.style.marginBottom = '20px';
+		previewContainer.style.display = 'none';
+
+		const previewLabel = previewContainer.createEl('h4', {text: 'Preview:'});
+		const previewContent = previewContainer.createEl('pre');
+		previewContent.style.cssText = `
+			background: var(--background-secondary);
+			padding: 10px;
+			border-radius: 5px;
+			max-height: 200px;
+			overflow-y: auto;
+			font-size: 12px;
+		`;
+
+		fileInput.addEventListener('change', (event) => {
+			const file = (event.target as HTMLInputElement).files?.[0];
+			if (file) {
+				const reader = new FileReader();
+				reader.onload = (e) => {
+					const content = e.target?.result as string;
+					try {
+						const data = JSON.parse(content);
+						const validation = this.plugin.validateImportData(data);
+						
+						if (validation.valid) {
+							previewContent.textContent = JSON.stringify(data.patterns, null, 2);
+							previewContainer.style.display = 'block';
+							previewLabel.textContent = `Preview (${data.patterns.length} patterns):`;
+						} else {
+							previewContent.textContent = `Error: ${validation.error}`;
+							previewContainer.style.display = 'block';
+							previewLabel.textContent = 'Error:';
+						}
+					} catch (error) {
+						previewContent.textContent = `Invalid JSON: ${error.message}`;
+						previewContainer.style.display = 'block';
+						previewLabel.textContent = 'Error:';
+					}
+				};
+				reader.readAsText(file);
+			}
+		});
+
+		const buttonContainer = contentEl.createDiv('modal-button-container');
+		
+		const cancelButton = buttonContainer.createEl('button', {
+			text: 'Cancel',
+			cls: 'mod-cta'
+		});
+		cancelButton.onclick = () => this.close();
+
+		const importButton = buttonContainer.createEl('button', {
+			text: 'Import',
+			cls: 'mod-warning'
+		});
+		importButton.onclick = () => {
+			const file = fileInput.files?.[0];
+			if (!file) {
+				new Notice('Please select a file');
+				return;
+			}
+
+			const reader = new FileReader();
+			reader.onload = (e) => {
+				const content = e.target?.result as string;
+				const mergeMode = (mergeRadio as HTMLInputElement).checked;
+				const result = this.plugin.importPatternsFromJson(content, mergeMode);
+				
+				if (result.success) {
+					new Notice(`Successfully imported ${result.imported} patterns`);
+					this.settingsTab.display();
+					this.close();
+				} else {
+					new Notice(`Import failed: ${result.error}`);
+				}
+			};
+			reader.readAsText(file);
+		};
+	}
+
+	onClose() {
+		const {contentEl} = this;
+		contentEl.empty();
 	}
 }
