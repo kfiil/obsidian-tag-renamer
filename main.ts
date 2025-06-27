@@ -197,6 +197,68 @@ export default class TagRenamerPlugin extends Plugin {
 	escapeRegex(string: string): string {
 		return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 	}
+
+	async getAllTagsInVault(): Promise<string[]> {
+		const allTags = new Set<string>();
+		const markdownFiles = this.app.vault.getMarkdownFiles();
+
+		for (const file of markdownFiles) {
+			try {
+				const content = await this.app.vault.read(file);
+				const tags = this.extractTagsFromContent(content);
+				tags.forEach(tag => allTags.add(tag));
+			} catch (error) {
+				console.error(`Error reading file ${file.path}:`, error);
+			}
+		}
+
+		return Array.from(allTags).sort();
+	}
+
+	extractTagsFromContent(content: string): string[] {
+		const tags: string[] = [];
+		const frontmatterRegex = /^---\n(.*?)\n---/s;
+		const match = content.match(frontmatterRegex);
+		
+		if (!match) return tags;
+
+		const frontmatter = match[1];
+
+		// Extract from tag arrays (tags: [tag1, tag2])
+		const arrayMatches = frontmatter.match(/^tags:\s*\[(.*?)\]$/gm);
+		if (arrayMatches) {
+			arrayMatches.forEach(line => {
+				const tagContent = line.replace(/^tags:\s*\[|\]$/g, '');
+				const tagList = tagContent.split(',').map(tag => tag.trim().replace(/['"]/g, ''));
+				tags.push(...tagList.filter(tag => tag.length > 0));
+			});
+		}
+
+		// Extract from tag lists (tags:\n  - tag1\n  - tag2)
+		const listMatches = frontmatter.match(/^tags:\s*\n((?:\s*-\s*[^\n]+\n?)+)/gm);
+		if (listMatches) {
+			listMatches.forEach(block => {
+				const tagLines = block.match(/^\s*-\s*([^\n]+)$/gm);
+				if (tagLines) {
+					tagLines.forEach(line => {
+						const tag = line.replace(/^\s*-\s*/, '').trim().replace(/['"]/g, '');
+						if (tag.length > 0) tags.push(tag);
+					});
+				}
+			});
+		}
+
+		// Extract from single tag line (tag: tagname)
+		const singleMatches = frontmatter.match(/^tag:\s*(.+)$/gm);
+		if (singleMatches) {
+			singleMatches.forEach(line => {
+				const tag = line.replace(/^tag:\s*/, '').trim().replace(/['"]/g, '');
+				if (tag.length > 0) tags.push(tag);
+			});
+		}
+
+		return tags;
+	}
 }
 
 class RenameConfirmationModal extends Modal {
@@ -263,19 +325,51 @@ class RenameConfirmationModal extends Modal {
 
 class TagRenamerSettingTab extends PluginSettingTab {
 	plugin: TagRenamerPlugin;
+	allTags: string[] = [];
 
 	constructor(app: App, plugin: TagRenamerPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
-	display(): void {
+	async display(): Promise<void> {
 		const {containerEl} = this;
 
 		containerEl.empty();
 
 		containerEl.createEl('h2', {text: 'Tag Renamer Settings'});
 
+		// Tag Discovery Section
+		new Setting(containerEl)
+			.setName('Tag Discovery')
+			.setDesc('Find all tags in your vault for inspiration')
+			.setHeading();
+
+		const tagDiscoveryContainer = containerEl.createDiv();
+		
+		new Setting(tagDiscoveryContainer)
+			.setName('Discover Tags')
+			.setDesc('Scan your vault to find all existing tags')
+			.addButton(button => button
+				.setButtonText('Scan Vault')
+				.setCta()
+				.onClick(async () => {
+					button.setButtonText('Scanning...');
+					button.setDisabled(true);
+					try {
+						this.allTags = await this.plugin.getAllTagsInVault();
+						this.displayFoundTags(tagDiscoveryContainer);
+						new Notice(`Found ${this.allTags.length} unique tags`);
+					} catch (error) {
+						new Notice('Error scanning vault: ' + error.message);
+					}
+					button.setButtonText('Scan Vault');
+					button.setDisabled(false);
+				}));
+
+		this.displayFoundTags(tagDiscoveryContainer);
+
+		// Rename Patterns Section
 		new Setting(containerEl)
 			.setName('Tag Rename Patterns')
 			.setDesc('Define patterns to rename tags across your vault')
@@ -329,5 +423,64 @@ class TagRenamerSettingTab extends PluginSettingTab {
 			(textInputs[0] as HTMLElement).style.marginRight = '10px';
 			(textInputs[1] as HTMLElement).style.width = '45%';
 		}
+	}
+
+	displayFoundTags(container: HTMLElement): void {
+		// Remove existing tag display
+		const existingTagsDiv = container.querySelector('.tag-discovery-results');
+		if (existingTagsDiv) {
+			existingTagsDiv.remove();
+		}
+
+		if (this.allTags.length === 0) return;
+
+		const tagsDiv = container.createDiv('tag-discovery-results');
+		tagsDiv.createEl('h4', {text: `Found Tags (${this.allTags.length})`});
+		tagsDiv.createEl('p', {
+			text: 'Click on any tag to add it to a new pattern search field',
+			cls: 'setting-item-description'
+		});
+
+		const tagContainer = tagsDiv.createDiv('tag-container');
+		tagContainer.style.display = 'flex';
+		tagContainer.style.flexWrap = 'wrap';
+		tagContainer.style.gap = '5px';
+		tagContainer.style.marginTop = '10px';
+
+		this.allTags.forEach(tag => {
+			const tagEl = tagContainer.createEl('span', {
+				text: tag,
+				cls: 'tag-pill'
+			});
+			
+			tagEl.style.cssText = `
+				background: var(--interactive-accent);
+				color: var(--text-on-accent);
+				padding: 2px 8px;
+				border-radius: 12px;
+				font-size: 12px;
+				cursor: pointer;
+				user-select: none;
+			`;
+
+			tagEl.addEventListener('click', () => {
+				this.addPatternWithTag(tag);
+			});
+
+			tagEl.addEventListener('mouseenter', () => {
+				tagEl.style.opacity = '0.8';
+			});
+
+			tagEl.addEventListener('mouseleave', () => {
+				tagEl.style.opacity = '1';
+			});
+		});
+	}
+
+	addPatternWithTag(tag: string): void {
+		this.plugin.settings.renamePatterns.push({ search: tag, replace: '' });
+		this.plugin.saveSettings();
+		this.display();
+		new Notice(`Added "${tag}" to search patterns`);
 	}
 }
