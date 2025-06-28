@@ -12,30 +12,136 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is an Obsidian plugin built with TypeScript that follows the standard Obsidian plugin structure:
+This is the **Tag Renamer** Obsidian plugin - a comprehensive tag management system for renaming, removing, and organizing tags across entire vaults.
 
-### Core Components
-- **main.ts** - Main plugin entry point extending Obsidian's `Plugin` class
-- **manifest.json** - Plugin metadata and configuration
-- **esbuild.config.mjs** - Build configuration using esbuild for bundling
+### Core Plugin Architecture
 
-### Plugin Structure
-- Main plugin class (`MyPlugin`) handles lifecycle (`onload`, `onunload`)
-- Settings system with interface (`MyPluginSettings`) and tab (`SampleSettingTab`)
-- Modal system (`SampleModal`) for UI interactions
-- Commands registered via `addCommand()` for user interactions
-- Ribbon icons and status bar integration
+#### Main Plugin Class: `TagRenamerPlugin`
+- **Lifecycle Management**: Handles `onload`, `onunload`, settings persistence
+- **Tag Processing Engine**: Core logic for finding and modifying tags in frontmatter
+- **Command Registration**: Editor commands and context menu integration
+- **File Operations**: Bulk processing with progress tracking and error handling
 
-### Build System
-- Uses esbuild for fast bundling with watch mode in development
-- TypeScript compilation with strict settings (nullChecks, noImplicitAny)
-- External dependencies (obsidian, electron, codemirror) are not bundled
-- Output target is ES2018 with CommonJS format
+#### Settings System: `TagRenamerSettings`
+- **RenamePattern Interface**: `{search: string, replace: string, removeMode?: boolean}`
+- **Pattern Array**: Stores multiple rename/remove patterns with mode toggles
+- **JSON Export/Import**: Full configuration sharing between vaults
+- **Validation Logic**: Ensures pattern integrity and backwards compatibility
 
-### Key Patterns
-- Settings are persisted using `loadData()`/`saveData()` 
-- DOM events and intervals registered via plugin methods for automatic cleanup
-- Commands can have simple callbacks or complex `checkCallback` for conditional execution
-- UI elements follow Obsidian's component patterns (Modal, Setting, Notice)
+### UI Components & Modals
 
-The plugin currently contains sample/template code that demonstrates Obsidian API capabilities including ribbon icons, commands, modals, settings, and editor interactions.
+#### Settings Tab: `TagRenamerSettingTab`
+- **Tag Discovery**: Vault-wide scanning with intelligent filtering
+- **Pattern Management**: Professional table UI with column headers
+- **Export/Import Interface**: JSON configuration management
+- **Manual Sorting**: User-controlled pattern organization
+
+#### Modal System
+- **RenameConfirmationModal**: Safety warnings for bulk tag operations
+- **DuplicateRemovalConfirmationModal**: Confirmation for duplicate cleanup
+- **ImportPatternsModal**: JSON import with validation and preview
+
+### Tag Processing Engine
+
+#### Frontmatter Format Support
+- **Array Format**: `tags: [tag1, tag2, tag3]`
+- **List Format**: `tags:\n  - tag1\n  - tag2`
+- **Single Tag**: `tag: tagname`
+- **Mixed Support**: Handles all formats in same file
+
+#### Processing Logic
+- **Pattern Filtering**: `p.search && (p.removeMode || p.replace)`
+- **Regex Matching**: Exact word boundary matching with escaping
+- **Remove Mode**: Filters out matching tags completely
+- **Replace Mode**: Maps old tags to new tags
+- **Cleanup**: Removes empty tag sections and extra whitespace
+
+### Key Features Implementation
+
+#### Tag Discovery System
+- **Vault Scanning**: `getAllTagsInVault()` processes all markdown files
+- **Intelligent Filtering**: Hides already-mapped tags from UI
+- **Alphabetical Sorting**: Clean, scannable tag lists
+- **Click-to-Add**: Instant pattern creation from discovered tags
+
+#### Duplicate Removal
+- **File-Level**: `removeDuplicateTagsFromContent()` for individual files
+- **Bulk Processing**: Folder-wide duplicate cleanup
+- **Set-Based Logic**: Uses `Set` data structure for efficient deduplication
+- **Format Preservation**: Maintains original frontmatter structure
+
+#### Safety & Error Handling
+- **Backup Warnings**: Clear user notifications before destructive operations
+- **Progress Tracking**: File count and modification statistics
+- **Error Isolation**: Individual file failures don't stop bulk operations
+- **Validation**: Pattern and JSON import validation with clear error messages
+
+### File Operations
+
+#### Context Menu Integration
+- **Folder Operations**: Right-click menus for bulk tag operations
+- **Recursive Processing**: Handles nested folder structures
+- **File Filtering**: Only processes `.md` files
+- **Progress Feedback**: Real-time operation status
+
+#### Commands
+- **"Remove duplicate tags from current file"**: Single file cleanup
+- **"Open Tag Renamer settings"**: Quick settings access
+- **Folder context actions**: Bulk rename and duplicate removal
+
+### Development Patterns
+
+#### State Management
+- **Settings Persistence**: Automatic save/load with `loadData()`/`saveData()`
+- **Real-time Updates**: UI refreshes on pattern changes
+- **Reference-Based Updates**: Handles dynamic pattern indexing safely
+
+#### Error Handling
+- **Graceful Degradation**: Operations continue despite individual failures
+- **User Feedback**: Clear error messages with file-specific details
+- **Validation**: Pre-operation checks prevent invalid states
+
+#### Performance Considerations
+- **Efficient Regex**: Compiled patterns with proper escaping
+- **Batch Operations**: Processes multiple files in single operation
+- **Memory Management**: Handles large vaults without memory issues
+
+### Code Organization
+
+#### Interface Definitions
+- **RenamePattern**: Core pattern structure with optional remove mode
+- **TagRenamerSettings**: Plugin configuration container
+- **Validation Results**: Structured error reporting for imports
+
+#### Method Responsibilities
+- **Tag Extraction**: `extractTagsFromContent()` parses all frontmatter formats
+- **Pattern Application**: `processFileContent()` applies patterns to file content
+- **File Processing**: `getAllMarkdownFiles()` recursively finds target files
+- **UI Management**: Clean separation between data operations and UI updates
+
+### Build System & Dependencies
+
+#### TypeScript Configuration
+- **Strict Mode**: Full type checking with nullChecks and noImplicitAny
+- **ES2018 Target**: Modern JavaScript with CommonJS modules
+- **External Dependencies**: Obsidian API, electron, codemirror excluded from bundle
+
+#### Development Workflow
+- **Watch Mode**: `npm run dev` for live compilation
+- **Production Build**: `npm run build` with minification and type checking
+- **ESLint Integration**: Code quality enforcement
+
+### Testing & Quality Assurance
+
+#### Manual Testing Scenarios
+- **Mixed Format Files**: Test all frontmatter combinations
+- **Large Vault Operations**: Verify performance with many files
+- **Edge Cases**: Empty tags, special characters, malformed frontmatter
+- **Error Recovery**: Test behavior with file access errors
+
+#### Safety Measures
+- **Backup Reminders**: Prominent warnings in all destructive operations
+- **Cancellation Options**: User can abort operations before execution
+- **Validation**: Multiple layers prevent invalid or dangerous operations
+
+This architecture provides a robust, user-friendly tag management system with comprehensive safety features and professional UI design.

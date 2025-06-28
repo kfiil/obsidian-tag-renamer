@@ -1,94 +1,164 @@
-# Obsidian Sample Plugin
+# Tag Renamer - Obsidian Plugin
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+A powerful and intuitive plugin for renaming and removing tags across your entire Obsidian vault with advanced pattern management and safety features.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## ✨ Features
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open Sample Modal" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+### 🔄 Smart Tag Operations
+- **Rename tags** across all files in folders and subfolders
+- **Remove unwanted tags** completely from your vault
+- **Duplicate tag removal** within individual files
+- **Bulk operations** with comprehensive safety warnings
 
-## First time developing plugins?
+### 🎛️ Advanced Pattern Management
+- **Replace mode**: Transform old tags into new ones
+- **Remove mode**: Delete specific tags entirely
+- **Mixed workflows**: Combine rename and remove patterns
+- **Manual sorting**: Organize patterns by mode and alphabetically
 
-Quick starting guide for new plugin devs:
+### 🔍 Intelligent Tag Discovery
+- **Vault-wide tag scanning** to find all existing tags
+- **Smart filtering**: Hide already-mapped tags from discovery
+- **Click-to-add**: Instantly create patterns from discovered tags
+- **Alphabetical sorting** for easy browsing
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+### 📤 Configuration Management
+- **JSON export/import**: Share patterns between vaults
+- **Merge or replace** import modes
+- **Backwards compatibility** with older pattern formats
+- **Comprehensive validation** with clear error messages
 
-## Releasing new releases
+### 🛡️ Safety & User Experience
+- **Backup warnings** before any destructive operations
+- **Progress feedback** with processed/modified file counts
+- **Error handling** with detailed notifications
+- **Professional table UI** with clean column headers
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+## 🚀 Quick Start
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+### Installation
+1. Download the plugin files (`main.js`, `manifest.json`, `styles.css`)
+2. Copy to your vault: `.obsidian/plugins/tag-renamer/`
+3. Enable the plugin in Obsidian settings
 
-## Adding your plugin to the community plugin list
+### Basic Usage
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+#### Creating Rename Patterns
+1. Go to **Settings** → **Tag Renamer**
+2. Click **"Scan Vault"** to discover existing tags
+3. Click on any discovered tag to create a pattern
+4. Enter replacement text or toggle to **Remove mode**
+5. Click **"Sort Patterns"** to organize (optional)
 
-## How to use
+#### Renaming Tags in Folders
+1. **Right-click** any folder in the file explorer
+2. Select **"Rename tags in folder"**
+3. Review the warning and backup recommendation
+4. Click **"Proceed with Rename"** to apply patterns
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+#### Removing Duplicate Tags
+1. **Right-click** any folder in the file explorer
+2. Select **"Remove duplicate tags in folder"**
+3. Confirm the operation to clean up duplicates
 
-## Manually installing the plugin
+### Commands
+- **"Remove duplicate tags from current file"** - Clean up the active file
+- **"Open Tag Renamer settings"** - Quick access to configuration
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+## 📋 Supported Tag Formats
 
-## Improve code quality with eslint (optional)
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- To use eslint with this project, make sure to install eslint from terminal:
-  - `npm install -g eslint`
-- To use eslint to analyze this project use this command:
-  - `eslint main.ts`
-  - eslint will then create a report with suggestions for code improvement by file and line number.
-- If your source code is in a folder, such as `src`, you can use eslint with this command to analyze all files in that folder:
-  - `eslint .\src\`
+The plugin handles all standard Obsidian frontmatter tag formats:
 
-## Funding URL
+```yaml
+# Array format
+tags: [work, project, urgent]
 
-You can include funding URLs where people who use your plugin can financially support it.
+# List format  
+tags:
+  - work
+  - project
+  - urgent
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+# Single tag
+tag: work
 ```
 
-If you have multiple URLs, you can also do:
+## 🎯 Use Cases
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
+### Vault Organization
+- **Standardize naming**: `proj` → `project`, `wrk` → `work`
+- **Fix typos**: `proejct` → `project`
+- **Consolidate similar tags**: `urgent`, `high-priority` → `important`
+
+### Tag Cleanup
+- **Remove deprecated tags**: `old-system`, `legacy`
+- **Delete temporary tags**: `draft`, `temp`, `wip`
+- **Clean up duplicates**: `[work, personal, work]` → `[work, personal]`
+
+### Team Collaboration
+- **Export patterns** from master vault
+- **Import standards** to team member vaults
+- **Maintain consistency** across multiple projects
+
+## 🔧 Development
+
+### Building the Plugin
+```bash
+npm install
+npm run dev    # Development with watch mode
+npm run build  # Production build
 ```
 
-## API Documentation
+### Project Structure
+- `main.ts` - Main plugin logic with tag processing
+- `manifest.json` - Plugin metadata and configuration
+- `styles.css` - Custom styling for UI components
+- `CLAUDE.md` - Development guidance for AI assistants
 
-See https://github.com/obsidianmd/obsidian-api
+### Key Components
+- **TagRenamerPlugin** - Main plugin class with tag processing logic
+- **RenameConfirmationModal** - Safety warning for bulk operations
+- **DuplicateRemovalConfirmationModal** - Confirmation for duplicate cleanup
+- **ImportPatternsModal** - JSON import interface with validation
+- **TagRenamerSettingTab** - Main settings interface with pattern management
+
+## 🛡️ Safety Features
+
+### Backup Recommendations
+- **Clear warnings** before any destructive operations
+- **File count display** so you know the scope
+- **Cancellation options** at every step
+
+### Validation & Error Handling
+- **Pattern validation** ensures search terms exist
+- **File access errors** are caught and reported
+- **JSON import validation** prevents corrupted configurations
+- **Progress tracking** shows exactly what was processed
+
+### Non-Destructive Options
+- **Preview mode** in JSON imports shows what will be imported
+- **Separate operations** for rename vs remove
+- **Granular control** over which patterns are applied
+
+## 📄 License
+
+MIT License - feel free to modify and distribute.
+
+## 🤝 Contributing
+
+Contributions welcome! Please:
+1. Test thoroughly with backup vaults
+2. Follow TypeScript best practices
+3. Add appropriate error handling
+4. Update documentation for new features
+
+## 📞 Support
+
+For issues, feature requests, or questions:
+- Create an issue in the GitHub repository
+- Ensure you have a backup before reporting tag-related bugs
+- Include example frontmatter and expected behavior
+
+---
+
+**⚠️ Important**: Always backup your vault before performing bulk tag operations. While the plugin includes safety measures, tag modifications cannot be easily undone.
