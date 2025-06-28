@@ -202,7 +202,9 @@ export default class TagRenamerPlugin extends Plugin {
 	}
 
 	async renameTags(folder: TFolder) {
-		const patterns = this.settings.renamePatterns.filter(p => p.search && p.replace);
+		const patterns = this.settings.renamePatterns.filter(p => 
+			p.search && (p.removeMode || p.replace)
+		);
 		
 		if (patterns.length === 0) {
 			new Notice('No rename patterns configured. Please add patterns in settings.');
