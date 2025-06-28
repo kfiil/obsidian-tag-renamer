@@ -142,7 +142,7 @@ npm run build  # Production build
 
 ## 📄 License
 
-MIT License - feel free to modify and distribute.
+BSD Zero Clause License - feel free to modify and distribute.
 
 ## 🤝 Contributing
 
