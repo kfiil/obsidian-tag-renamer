@@ -1,14 +1,8 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Menu } from 'obsidian';
-
-interface RenamePattern {
-	search: string;
-	replace: string;
-	removeMode?: boolean; // true = remove tag, false/undefined = replace tag
-}
-
-interface TagRenamerSettings {
-	renamePatterns: RenamePattern[];
-}
+import { RenamePattern, TagRenamerSettings, ImportValidationResult, ImportResult, ExportData } from './src/types/interfaces';
+import { FileService } from './src/services/FileService';
+import { TagProcessor } from './src/services/TagProcessor';
+import { CSS_STYLES } from './src/constants/patterns';
 
 const DEFAULT_SETTINGS: TagRenamerSettings = {
 	renamePatterns: []
@@ -16,17 +10,21 @@ const DEFAULT_SETTINGS: TagRenamerSettings = {
 
 export default class TagRenamerPlugin extends Plugin {
 	settings: TagRenamerSettings;
+	private fileService: FileService;
+	private tagProcessor: TagProcessor;
 
 	async onload() {
 		await this.loadSettings();
+		
+		// Initialize services
+		this.fileService = new FileService(this.app);
+		this.tagProcessor = new TagProcessor();
 
 		// This creates an icon in the left ribbon.
 		const ribbonIconEl = this.addRibbonIcon('tag', 'Tag Renamer', (evt: MouseEvent) => {
 			// Called when the user clicks the icon.
 			new Notice('Tag Renamer is active!');
 		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		const statusBarItemEl = this.addStatusBarItem();
@@ -37,10 +35,8 @@ export default class TagRenamerPlugin extends Plugin {
 			id: 'open-tag-renamer-settings',
 			name: 'Open Tag Renamer settings',
 			callback: () => {
-				// @ts-ignore
-				this.app.setting.open();
-				// @ts-ignore
-				this.app.setting.openTabById('tag-renamer');
+				(this.app as any).setting.open();
+				(this.app as any).setting.openTabById('tag-renamer');
 			}
 		});
 
@@ -48,11 +44,14 @@ export default class TagRenamerPlugin extends Plugin {
 		this.addCommand({
 			id: 'remove-duplicate-tags-current',
 			name: 'Remove duplicate tags from current file',
-			editorCallback: async (editor: Editor, view: MarkdownView) => {
+			editorCallback: async (editor: Editor, ctx) => {
+				const view = ctx as MarkdownView;
 				const file = view.file;
-				if (file) {
-					await this.removeDuplicatesFromFile(file);
+				if (!file) {
+					new Notice('No active file');
+					return;
 				}
+				await this.removeDuplicatesFromFile(file);
 			}
 		});
 		
@@ -61,7 +60,8 @@ export default class TagRenamerPlugin extends Plugin {
 
 		// Register context menu for folders
 		this.registerEvent(
-			this.app.workspace.on('file-menu', (menu: Menu, folder: TFolder) => {
+			this.app.workspace.on('file-menu', (menu: Menu, file) => {
+				const folder = file as TFolder;
 				if (folder instanceof TFolder) {
 					menu.addItem((item) => {
 						item
@@ -84,14 +84,6 @@ export default class TagRenamerPlugin extends Plugin {
 			})
 		);
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
 	onunload() {
@@ -115,324 +107,23 @@ export default class TagRenamerPlugin extends Plugin {
 	}
 
 	async removeDuplicatesFromFile(file: TFile): Promise<boolean> {
-		try {
-			const content = await this.app.vault.read(file);
-			const modifiedContent = this.removeDuplicateTagsFromContent(content);
-			
-			if (modifiedContent !== content) {
-				await this.app.vault.modify(file, modifiedContent);
-				new Notice(`Removed duplicate tags from ${file.name}`);
-				return true;
-			} else {
-				new Notice(`No duplicate tags found in ${file.name}`);
-				return false;
-			}
-		} catch (error) {
-			console.error(`Error processing file ${file.path}:`, error);
-			new Notice(`Error processing ${file.name}: ${error.message}`);
-			return false;
-		}
+		return await this.fileService.removeDuplicatesFromFile(file);
 	}
 
 	async removeDuplicatesFromFolder(folder: TFolder) {
-		const files = this.getAllMarkdownFiles(folder);
-		let processedCount = 0;
-		let modifiedCount = 0;
-
-		new Notice(`Processing ${files.length} files for duplicate tags...`);
-
-		for (const file of files) {
-			const wasModified = await this.removeDuplicatesFromFile(file);
-			if (wasModified) {
-				modifiedCount++;
-			}
-			processedCount++;
-		}
-
-		new Notice(`Completed! Processed ${processedCount} files, removed duplicates from ${modifiedCount} files.`);
-	}
-
-	removeDuplicateTagsFromContent(content: string): string {
-		const frontmatterRegex = /^---\n(.*?)\n---/s;
-		const match = content.match(frontmatterRegex);
-		
-		if (!match) return content;
-
-		let frontmatter = match[1];
-		let modified = false;
-
-		// Process tag arrays (tags: [tag1, tag2, tag1])
-		frontmatter = frontmatter.replace(/^tags:\s*\[(.*?)\]$/gm, (line, tagContent) => {
-			const tags = tagContent.split(',').map((tag: string) => tag.trim().replace(/['"]/g, ''));
-			const uniqueTags = [...new Set(tags.filter((tag: string) => tag.length > 0))];
-			
-			if (uniqueTags.length !== tags.filter((tag: string) => tag.length > 0).length) {
-				modified = true;
-				const formattedTags = uniqueTags.map((tag: string) => `"${tag}"`).join(', ');
-				return `tags: [${formattedTags}]`;
-			}
-			return line;
-		});
-
-		// Process tag lists (tags:\n  - tag1\n  - tag2\n  - tag1)
-		const tagListRegex = /^tags:\s*\n((?:\s*-\s*[^\n]+\n?)+)/gm;
-		frontmatter = frontmatter.replace(tagListRegex, (block) => {
-			const tagLines = block.match(/^\s*-\s*([^\n]+)$/gm);
-			if (tagLines) {
-				const tags = tagLines.map(line => 
-					line.replace(/^\s*-\s*/, '').trim().replace(/['"]/g, '')
-				).filter(tag => tag.length > 0);
-				
-				const uniqueTags = [...new Set(tags)];
-				
-				if (uniqueTags.length !== tags.length) {
-					modified = true;
-					const newTagLines = uniqueTags.map((tag: string) => `  - "${tag}"`).join('\n');
-					return `tags:\n${newTagLines}\n`;
-				}
-			}
-			return block;
-		});
-
-		if (modified) {
-			return content.replace(frontmatterRegex, `---\n${frontmatter}\n---`);
-		}
-
-		return content;
+		await this.fileService.removeDuplicatesFromFolder(folder);
 	}
 
 	async renameTags(folder: TFolder) {
-		const patterns = this.settings.renamePatterns.filter(p => 
-			p.search && (p.removeMode || p.replace)
-		);
-		
-		if (patterns.length === 0) {
-			new Notice('No rename patterns configured. Please add patterns in settings.');
-			return;
-		}
-
-		const files = this.getAllMarkdownFiles(folder);
-		let processedCount = 0;
-		let modifiedCount = 0;
-
-		new Notice(`Processing ${files.length} files...`);
-
-		for (const file of files) {
-			try {
-				const content = await this.app.vault.read(file);
-				const modifiedContent = this.processFileContent(content, patterns);
-				
-				if (modifiedContent !== content) {
-					await this.app.vault.modify(file, modifiedContent);
-					modifiedCount++;
-				}
-				processedCount++;
-			} catch (error) {
-				console.error(`Error processing file ${file.path}:`, error);
-				new Notice(`Error processing ${file.name}: ${error.message}`);
-			}
-		}
-
-		new Notice(`Completed! Processed ${processedCount} files, modified ${modifiedCount} files.`);
-	}
-
-	getAllMarkdownFiles(folder: TFolder): TFile[] {
-		const files: TFile[] = [];
-		
-		const processFolder = (currentFolder: TFolder) => {
-			for (const child of currentFolder.children) {
-				if (child instanceof TFile && child.extension === 'md') {
-					files.push(child);
-				} else if (child instanceof TFolder) {
-					processFolder(child);
-				}
-			}
-		};
-
-		processFolder(folder);
-		return files;
-	}
-
-	processFileContent(content: string, patterns: RenamePattern[]): string {
-		// Match YAML frontmatter
-		const frontmatterRegex = /^---\n(.*?)\n---/s;
-		const match = content.match(frontmatterRegex);
-		
-		if (!match) return content;
-
-		let frontmatter = match[1];
-		let modified = false;
-
-		// Process tag arrays (tags: [tag1, tag2])
-		frontmatter = frontmatter.replace(/^tags:\s*\[(.*?)\]$/gm, (line, tagContent) => {
-			let tags = tagContent.split(',').map((tag: string) => tag.trim().replace(/['"]/g, ''));
-			let originalLength = tags.length;
-			
-			for (const pattern of patterns) {
-				const searchRegex = new RegExp(`^${this.escapeRegex(pattern.search)}$`);
-				
-				if (pattern.removeMode) {
-					// Remove matching tags
-					tags = tags.filter((tag: string) => !searchRegex.test(tag.trim()));
-				} else {
-					// Replace matching tags
-					tags = tags.map((tag: string) => {
-						if (searchRegex.test(tag.trim())) {
-							modified = true;
-							return pattern.replace;
-						}
-						return tag;
-					});
-				}
-			}
-			
-			if (tags.length !== originalLength) {
-				modified = true;
-			}
-			
-			const formattedTags = tags.filter((tag: string) => tag.length > 0).map((tag: string) => `"${tag}"`).join(', ');
-			return `tags: [${formattedTags}]`;
-		});
-
-		// Process tag lists (tags:\n  - tag1\n  - tag2)
-		const tagListRegex = /^tags:\s*\n((?:\s*-\s*[^\n]+\n?)+)/gm;
-		frontmatter = frontmatter.replace(tagListRegex, (block) => {
-			const tagLines = block.match(/^\s*-\s*([^\n]+)$/gm);
-			if (tagLines) {
-				let tags = tagLines.map(line => 
-					line.replace(/^\s*-\s*/, '').trim().replace(/['"]/g, '')
-				).filter(tag => tag.length > 0);
-				
-				let originalLength = tags.length;
-				
-				for (const pattern of patterns) {
-					const searchRegex = new RegExp(`^${this.escapeRegex(pattern.search)}$`);
-					
-					if (pattern.removeMode) {
-						// Remove matching tags
-						tags = tags.filter(tag => !searchRegex.test(tag));
-					} else {
-						// Replace matching tags
-						tags = tags.map(tag => {
-							if (searchRegex.test(tag)) {
-								modified = true;
-								return pattern.replace;
-							}
-							return tag;
-						});
-					}
-				}
-				
-				if (tags.length !== originalLength) {
-					modified = true;
-				}
-				
-				if (tags.length === 0) {
-					return ''; // Remove the entire tags section if no tags remain
-				}
-				
-				const newTagLines = tags.map((tag: string) => `  - "${tag}"`).join('\n');
-				return `tags:\n${newTagLines}\n`;
-			}
-			return block;
-		});
-
-		// Process single tag line (tag: tagname)
-		frontmatter = frontmatter.replace(/^tag:\s*(.+)$/gm, (line, tag) => {
-			const cleanTag = tag.trim().replace(/['"]/g, '');
-			
-			for (const pattern of patterns) {
-				const searchRegex = new RegExp(`^${this.escapeRegex(pattern.search)}$`);
-				if (searchRegex.test(cleanTag)) {
-					modified = true;
-					if (pattern.removeMode) {
-						return ''; // Remove the entire tag line
-					} else {
-						return `tag: "${pattern.replace}"`;
-					}
-				}
-			}
-			return line;
-		});
-
-		// Clean up empty lines left by removed tags
-		frontmatter = frontmatter.replace(/\n\n+/g, '\n').replace(/^\n+|\n+$/g, '');
-
-		if (modified) {
-			return content.replace(frontmatterRegex, `---\n${frontmatter}\n---`);
-		}
-
-		return content;
-	}
-
-	escapeRegex(string: string): string {
-		return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		await this.fileService.renameTags(folder, this.settings.renamePatterns);
 	}
 
 	async getAllTagsInVault(): Promise<string[]> {
-		const allTags = new Set<string>();
-		const markdownFiles = this.app.vault.getMarkdownFiles();
-
-		for (const file of markdownFiles) {
-			try {
-				const content = await this.app.vault.read(file);
-				const tags = this.extractTagsFromContent(content);
-				tags.forEach(tag => allTags.add(tag));
-			} catch (error) {
-				console.error(`Error reading file ${file.path}:`, error);
-			}
-		}
-
-		return Array.from(allTags).sort();
-	}
-
-	extractTagsFromContent(content: string): string[] {
-		const tags: string[] = [];
-		const frontmatterRegex = /^---\n(.*?)\n---/s;
-		const match = content.match(frontmatterRegex);
-		
-		if (!match) return tags;
-
-		const frontmatter = match[1];
-
-		// Extract from tag arrays (tags: [tag1, tag2])
-		const arrayMatches = frontmatter.match(/^tags:\s*\[(.*?)\]$/gm);
-		if (arrayMatches) {
-			arrayMatches.forEach(line => {
-				const tagContent = line.replace(/^tags:\s*\[|\]$/g, '');
-				const tagList = tagContent.split(',').map(tag => tag.trim().replace(/['"]/g, ''));
-				tags.push(...tagList.filter(tag => tag.length > 0));
-			});
-		}
-
-		// Extract from tag lists (tags:\n  - tag1\n  - tag2)
-		const listMatches = frontmatter.match(/^tags:\s*\n((?:\s*-\s*[^\n]+\n?)+)/gm);
-		if (listMatches) {
-			listMatches.forEach(block => {
-				const tagLines = block.match(/^\s*-\s*([^\n]+)$/gm);
-				if (tagLines) {
-					tagLines.forEach(line => {
-						const tag = line.replace(/^\s*-\s*/, '').trim().replace(/['"]/g, '');
-						if (tag.length > 0) tags.push(tag);
-					});
-				}
-			});
-		}
-
-		// Extract from single tag line (tag: tagname)
-		const singleMatches = frontmatter.match(/^tag:\s*(.+)$/gm);
-		if (singleMatches) {
-			singleMatches.forEach(line => {
-				const tag = line.replace(/^tag:\s*/, '').trim().replace(/['"]/g, '');
-				if (tag.length > 0) tags.push(tag);
-			});
-		}
-
-		return tags;
+		return await this.fileService.getAllTagsInVault();
 	}
 
 	exportPatternsToJson(): string {
-		const exportData = {
+		const exportData: ExportData = {
 			version: "1.0",
 			exportDate: new Date().toISOString(),
 			pluginName: "Tag Renamer",
@@ -441,7 +132,7 @@ export default class TagRenamerPlugin extends Plugin {
 		return JSON.stringify(exportData, null, 2);
 	}
 
-	validateImportData(data: any): { valid: boolean; error?: string } {
+	validateImportData(data: any): ImportValidationResult {
 		if (!data || typeof data !== 'object') {
 			return { valid: false, error: 'Invalid JSON format' };
 		}
@@ -466,7 +157,7 @@ export default class TagRenamerPlugin extends Plugin {
 		return { valid: true };
 	}
 
-	importPatternsFromJson(jsonString: string, mergeMode: boolean = false): { success: boolean; error?: string; imported?: number } {
+	importPatternsFromJson(jsonString: string, mergeMode: boolean = false): ImportResult {
 		try {
 			const data = JSON.parse(jsonString);
 			const validation = this.validateImportData(data);
@@ -493,7 +184,8 @@ export default class TagRenamerPlugin extends Plugin {
 			this.saveSettings();
 			return { success: true, imported: importedPatterns.length };
 		} catch (error) {
-			return { success: false, error: 'Invalid JSON format: ' + error.message };
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+			return { success: false, error: 'Invalid JSON format: ' + errorMessage };
 		}
 	}
 }
@@ -737,19 +429,10 @@ class TagRenamerSettingTab extends PluginSettingTab {
 			.setClass('pattern-header');
 
 		// Create header layout
-		const headerControl = headerSetting.settingEl.querySelector('.setting-item-control') as HTMLElement;
-		if (headerControl) {
+		const headerControl = headerSetting.settingEl.querySelector('.setting-item-control');
+		if (headerControl instanceof HTMLElement) {
 			headerControl.innerHTML = '';
-			headerControl.style.cssText = `
-				display: flex;
-				align-items: center;
-				gap: 10px;
-				font-weight: bold;
-				font-size: 12px;
-				color: var(--text-muted);
-				text-transform: uppercase;
-				letter-spacing: 0.5px;
-			`;
+			headerControl.style.cssText = CSS_STYLES.HEADER_CONTROL;
 
 			const searchHeader = headerControl.createEl('div', {text: 'Search'});
 			searchHeader.style.width = '35%';
@@ -767,8 +450,8 @@ class TagRenamerSettingTab extends PluginSettingTab {
 		}
 
 		// Hide the setting name area for headers
-		const settingInfo = headerSetting.settingEl.querySelector('.setting-item-info') as HTMLElement;
-		if (settingInfo) {
+		const settingInfo = headerSetting.settingEl.querySelector('.setting-item-info');
+		if (settingInfo instanceof HTMLElement) {
 			settingInfo.style.display = 'none';
 		}
 	}
@@ -808,13 +491,9 @@ class TagRenamerSettingTab extends PluginSettingTab {
 				}));
 
 		// Style the components to align with headers
-		const settingControl = setting.settingEl.querySelector('.setting-item-control') as HTMLElement;
-		if (settingControl) {
-			settingControl.style.cssText = `
-				display: flex;
-				align-items: center;
-				gap: 10px;
-			`;
+		const settingControl = setting.settingEl.querySelector('.setting-item-control');
+		if (settingControl instanceof HTMLElement) {
+			settingControl.style.cssText = CSS_STYLES.PATTERN_CONTROL;
 			
 			const elements = settingControl.children;
 			if (elements.length >= 4) {
@@ -828,8 +507,8 @@ class TagRenamerSettingTab extends PluginSettingTab {
 		}
 
 		// Hide the setting name area
-		const settingInfo = setting.settingEl.querySelector('.setting-item-info') as HTMLElement;
-		if (settingInfo) {
+		const settingInfo = setting.settingEl.querySelector('.setting-item-info');
+		if (settingInfo instanceof HTMLElement) {
 			settingInfo.style.display = 'none';
 		}
 	}
@@ -908,15 +587,7 @@ class TagRenamerSettingTab extends PluginSettingTab {
 				cls: 'tag-pill'
 			});
 			
-			tagEl.style.cssText = `
-				background: var(--interactive-accent);
-				color: var(--text-on-accent);
-				padding: 2px 8px;
-				border-radius: 12px;
-				font-size: 12px;
-				cursor: pointer;
-				user-select: none;
-			`;
+			tagEl.style.cssText = CSS_STYLES.TAG_PILL;
 
 			tagEl.addEventListener('click', () => {
 				this.addPatternWithTag(tag);
@@ -1022,14 +693,7 @@ class ImportPatternsModal extends Modal {
 
 		const previewLabel = previewContainer.createEl('h4', {text: 'Preview:'});
 		const previewContent = previewContainer.createEl('pre');
-		previewContent.style.cssText = `
-			background: var(--background-secondary);
-			padding: 10px;
-			border-radius: 5px;
-			max-height: 200px;
-			overflow-y: auto;
-			font-size: 12px;
-		`;
+		previewContent.style.cssText = CSS_STYLES.PREVIEW_CONTENT;
 
 		fileInput.addEventListener('change', (event) => {
 			const file = (event.target as HTMLInputElement).files?.[0];
