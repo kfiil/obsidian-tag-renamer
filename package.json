@@ -6,12 +6,13 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"test": "npm run build && node -e \"require('./main.js'); require('./src/tests/TestRunner.js').testRunner.runAllTests()\"",
+		"build:tests": "tsc src/tests/*.ts --outDir . --target es2018 --module commonjs --moduleResolution node --skipLibCheck",
+		"test": "npm run build && npm run build:tests && node tests/standalone-runner.js",
 		"test:watch": "npm run build && npm run test",
-		"test:tagprocessor": "npm run build && node -e \"require('./main.js'); require('./src/tests/TestRunner.js').testRunner.runTagProcessorTests()\"",
-		"test:fileservice": "npm run build && node -e \"require('./main.js'); require('./src/tests/TestRunner.js').testRunner.runFileServiceTests()\"",
-		"test:integration": "npm run build && node -e \"require('./main.js'); require('./src/tests/TestRunner.js').testRunner.runIntegrationTests()\"",
-		"test:report": "npm run build && node -e \"console.log(require('./src/tests/TestRunner.js').testRunner.generateTestReport())\"",
+		"test:tagprocessor": "npm run build && npm run build:tests && node tests/standalone-runner.js",
+		"test:fileservice": "npm run build && npm run build:tests && node tests/standalone-runner.js",
+		"test:integration": "npm run build && npm run build:tests && node tests/standalone-runner.js",
+		"test:report": "npm run build && npm run build:tests && node tests/standalone-runner.js",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [],
