@@ -12,6 +12,12 @@ node_modules
 # They should be uploaded to GitHub releases instead.
 main.js
 
+# TypeScript compilation artifacts - these are build results, not source
+tests/*.js
+services/*.js
+constants/*.js
+types/*.js
+
 # Exclude sourcemaps
 *.map
 
