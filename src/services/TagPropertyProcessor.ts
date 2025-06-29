@@ -35,7 +35,7 @@ export class TagPropertyProcessor {
             );
 
             const beforeReplace = frontmatter;
-            frontmatter = frontmatter.replace(propertyRegex, (match, indent, oldProp, colon, rest) => {
+            frontmatter = frontmatter.replace(propertyRegex, (_match, indent, _oldProp, colon, rest) => {
                 modified = true;
                 return `${indent}${to}${colon}${rest}`;
             });

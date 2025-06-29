@@ -26,7 +26,7 @@ class TagPropertyProcessor {
             // Pattern to match property lines: "property:" or "property: value" or "property:\n  - item"
             const propertyRegex = new RegExp(`^(\\s*)(${escapedFrom})(\\s*:)(.*?)$`, 'gm');
             const beforeReplace = frontmatter;
-            frontmatter = frontmatter.replace(propertyRegex, (match, indent, oldProp, colon, rest) => {
+            frontmatter = frontmatter.replace(propertyRegex, (_match, indent, _oldProp, colon, rest) => {
                 modified = true;
                 return `${indent}${to}${colon}${rest}`;
             });

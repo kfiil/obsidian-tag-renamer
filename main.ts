@@ -1,9 +1,7 @@
-import { App, Editor, MarkdownView, Notice, Plugin, TFolder, TFile, Menu } from 'obsidian';
+import { Editor, MarkdownView, Notice, Plugin, TFolder, TFile, Menu } from 'obsidian';
 import { RenamePattern, TagRenamerSettings, ImportValidationResult, ImportResult, ExportData } from './src/types/interfaces';
 import { FileService } from './src/services/FileService';
-import { CSS_STYLES } from './src/constants/patterns';
 import { RenameConfirmationModal } from './src/ui/modals/rename-confirmation-modal';
-import { ImportPatternsModal } from './src/ui/modals/import-patterns-modal';
 import { DuplicateRemovalConfirmationModal } from './src/ui/modals/duplicate-removal-modal';
 import { TagRenamerSettingTab } from './src/ui/settings/settings-tab';
 
@@ -82,6 +80,15 @@ export default class TagRenamerPlugin extends Plugin {
 								this.showDuplicateRemovalConfirmation(folder);
 							});
 					});
+					
+					menu.addItem((item) => {
+						item
+							.setTitle('Rename tag properties in folder')
+							.setIcon('file-text')
+							.onClick(() => {
+								this.showPropertyRenameConfirmation(folder);
+							});
+					});
 				}
 			})
 		);
@@ -108,6 +115,20 @@ export default class TagRenamerPlugin extends Plugin {
 		new DuplicateRemovalConfirmationModal(this.app, this, folder).open();
 	}
 
+	showPropertyRenameConfirmation(folder: TFolder) {
+		// Check if there are any property rename patterns configured
+		const patterns = this.settings.propertyRenamePatterns || [];
+		const validPatterns = patterns.filter(p => p.from && p.to);
+		
+		if (validPatterns.length === 0) {
+			new Notice('No property rename patterns configured. Please add patterns in settings first.');
+			return;
+		}
+		
+		// For now, directly proceed with renaming - in the future we could add a confirmation modal
+		this.renameTagProperties(folder);
+	}
+
 	async removeDuplicatesFromFile(file: TFile): Promise<boolean> {
 		return await this.fileService.removeDuplicatesFromFile(file);
 	}
@@ -129,7 +150,8 @@ export default class TagRenamerPlugin extends Plugin {
 			version: "1.0",
 			exportDate: new Date().toISOString(),
 			pluginName: "Tag Renamer",
-			patterns: this.settings.renamePatterns
+			patterns: this.settings.renamePatterns,
+			propertyPatterns: this.settings.propertyRenamePatterns || []
 		};
 		return JSON.stringify(exportData, null, 2);
 	}
@@ -156,6 +178,23 @@ export default class TagRenamerPlugin extends Plugin {
 			}
 		}
 
+		// Validate property patterns if present
+		if (data.propertyPatterns) {
+			if (!Array.isArray(data.propertyPatterns)) {
+				return { valid: false, error: 'Property patterns must be an array' };
+			}
+
+			for (let i = 0; i < data.propertyPatterns.length; i++) {
+				const pattern = data.propertyPatterns[i];
+				if (!pattern || typeof pattern !== 'object') {
+					return { valid: false, error: `Property pattern ${i + 1} is invalid` };
+				}
+				if (typeof pattern.from !== 'string' || typeof pattern.to !== 'string') {
+					return { valid: false, error: `Property pattern ${i + 1} must have from and to strings` };
+				}
+			}
+		}
+
 		return { valid: true };
 	}
 
@@ -174,17 +213,34 @@ export default class TagRenamerPlugin extends Plugin {
 				replace: pattern.replace,
 				removeMode: pattern.removeMode || false
 			}));
+
+			// Handle property patterns if present
+			const importedPropertyPatterns = data.propertyPatterns ? 
+				data.propertyPatterns.map((pattern: any) => ({
+					from: pattern.from,
+					to: pattern.to
+				})) : [];
 			
 			if (mergeMode) {
 				// Add new patterns to existing ones
 				this.settings.renamePatterns.push(...importedPatterns);
+				if (importedPropertyPatterns.length > 0) {
+					if (!this.settings.propertyRenamePatterns) {
+						this.settings.propertyRenamePatterns = [];
+					}
+					this.settings.propertyRenamePatterns.push(...importedPropertyPatterns);
+				}
 			} else {
 				// Replace all patterns
 				this.settings.renamePatterns = importedPatterns;
+				this.settings.propertyRenamePatterns = importedPropertyPatterns;
 			}
 
 			this.saveSettings();
-			return { success: true, imported: importedPatterns.length };
+			return { 
+				success: true, 
+				imported: importedPatterns.length + importedPropertyPatterns.length 
+			};
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 			return { success: false, error: 'Invalid JSON format: ' + errorMessage };

@@ -19,6 +19,10 @@ export interface TagRenamerPlugin extends Plugin {
     removeDuplicatesFromFile(file: TFile): Promise<boolean>;
     getAllTagsInVault(): Promise<string[]>;
     
+    // Property processing methods
+    renameTagProperties(folder: TFolder): Promise<void>;
+    findCustomTagPropertiesInVault(): Promise<string[]>;
+    
     // Import/Export methods
     exportPatternsToJson(): string;
     importPatternsFromJson(jsonData: string, mergeMode?: boolean): any;
@@ -27,4 +31,5 @@ export interface TagRenamerPlugin extends Plugin {
     // UI methods
     showRenameConfirmation(folder: TFolder): void;
     showDuplicateRemovalConfirmation(folder: TFolder): void;
+    showPropertyRenameConfirmation(folder: TFolder): void;
 }

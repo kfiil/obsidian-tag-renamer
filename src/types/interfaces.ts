@@ -30,4 +30,5 @@ export interface ExportData {
 	exportDate: string;
 	pluginName: string;
 	patterns: RenamePattern[];
+	propertyPatterns?: PropertyRenamePattern[]; // Optional for backward compatibility
 }

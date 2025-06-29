@@ -5,7 +5,7 @@
 
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import { TagRenamerPlugin } from '../../types/plugin-types';
-import { RenamePattern } from '../../types/interfaces';
+import { RenamePattern, PropertyRenamePattern } from '../../types/interfaces';
 import { CSS_STYLES } from '../../constants/patterns';
 import { ImportPatternsModal } from '../modals/import-patterns-modal';
 
@@ -55,6 +55,84 @@ export class TagRenamerSettingTab extends PluginSettingTab {
 
 		this.displayFoundTags(tagDiscoveryContainer);
 
+		// Property Discovery Section
+		new Setting(containerEl)
+			.setName('Property Discovery')
+			.setDesc('Find custom tag properties in your vault')
+			.setHeading();
+
+		const propertyDiscoveryContainer = containerEl.createDiv();
+		
+		new Setting(propertyDiscoveryContainer)
+			.setName('Discover Properties')
+			.setDesc('Scan your vault to find custom tag properties')
+			.addButton(button => button
+				.setButtonText('Scan for Properties')
+				.setCta()
+				.onClick(async () => {
+					button.setButtonText('Scanning...');
+					button.setDisabled(true);
+					
+					try {
+						const properties = await this.plugin.findCustomTagPropertiesInVault();
+						this.displayFoundProperties(propertyDiscoveryContainer, properties);
+						new Notice(`Found ${properties.length} custom tag properties`);
+					} catch (error) {
+						new Notice('Error scanning vault: ' + (error instanceof Error ? error.message : String(error)));
+					}
+					
+					button.setButtonText('Scan for Properties');
+					button.setDisabled(false);
+				}));
+
+		// Property Rename Patterns Section
+		const propertyPatternsCount = this.plugin.settings.propertyRenamePatterns?.length || 0;
+		const propertyDesc = propertyPatternsCount > 0 
+			? `Define patterns to rename property names across your vault (${propertyPatternsCount} configured)`
+			: 'Define patterns to rename property names across your vault. Example: "🗄️ Tags Database" → "tags"';
+			
+		new Setting(containerEl)
+			.setName('Property Rename Patterns')
+			.setDesc(propertyDesc)
+			.setHeading();
+
+		// Add property pattern headers
+		if (this.plugin.settings.propertyRenamePatterns && this.plugin.settings.propertyRenamePatterns.length > 0) {
+			this.createPropertyPatternHeaders(containerEl);
+		}
+
+		// Add existing property patterns
+		if (this.plugin.settings.propertyRenamePatterns && this.plugin.settings.propertyRenamePatterns.length > 0) {
+			this.plugin.settings.propertyRenamePatterns.forEach((pattern, index) => {
+				this.createPropertyPatternSetting(containerEl, pattern, index);
+			});
+		} else {
+			// Show helpful message when no patterns are configured
+			const noPropertyPatternsDiv = containerEl.createDiv();
+			noPropertyPatternsDiv.style.marginBottom = '20px';
+			
+			const helpText = noPropertyPatternsDiv.createEl('p', {
+				text: 'No property rename patterns configured yet. Use the "Scan for Properties" button above to discover custom tag properties in your vault, then click on them to create patterns.',
+				cls: 'setting-item-description'
+			});
+			helpText.style.fontStyle = 'italic';
+			helpText.style.color = 'var(--text-muted)';
+		}
+
+		// Add property pattern action buttons
+		const propertyActionSetting = new Setting(containerEl);
+		propertyActionSetting.addButton(button => button
+			.setButtonText('Add Property Pattern')
+			.setCta()
+			.onClick(() => {
+				if (!this.plugin.settings.propertyRenamePatterns) {
+					this.plugin.settings.propertyRenamePatterns = [];
+				}
+				this.plugin.settings.propertyRenamePatterns.push({ from: '', to: '' });
+				this.plugin.saveSettings();
+				this.display();
+			}));
+
 		// Export/Import Section
 		new Setting(containerEl)
 			.setName('Export & Import')
@@ -63,7 +141,7 @@ export class TagRenamerSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Export Patterns')
-			.setDesc('Export all current patterns to JSON file')
+			.setDesc('Export all current tag and property patterns to JSON file')
 			.addButton(button => button
 				.setButtonText('Export to JSON')
 				.setIcon('download')
@@ -73,7 +151,7 @@ export class TagRenamerSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Import Patterns')
-			.setDesc('Import patterns from JSON file')
+			.setDesc('Import tag and property patterns from JSON file')
 			.addButton(button => button
 				.setButtonText('Import from JSON')
 				.setIcon('upload')
@@ -311,7 +389,11 @@ export class TagRenamerSettingTab extends PluginSettingTab {
 	}
 
 	exportPatterns(): void {
-		if (this.plugin.settings.renamePatterns.length === 0) {
+		const tagPatternCount = this.plugin.settings.renamePatterns.length;
+		const propertyPatternCount = this.plugin.settings.propertyRenamePatterns?.length || 0;
+		const totalPatterns = tagPatternCount + propertyPatternCount;
+		
+		if (totalPatterns === 0) {
 			new Notice('No patterns to export');
 			return;
 		}
@@ -328,10 +410,187 @@ export class TagRenamerSettingTab extends PluginSettingTab {
 		document.body.removeChild(a);
 		URL.revokeObjectURL(url);
 		
-		new Notice(`Exported ${this.plugin.settings.renamePatterns.length} patterns to JSON`);
+		const message = propertyPatternCount > 0 
+			? `Exported ${tagPatternCount} tag patterns and ${propertyPatternCount} property patterns to JSON`
+			: `Exported ${tagPatternCount} tag patterns to JSON`;
+		new Notice(message);
 	}
 
 	importPatterns(): void {
 		new ImportPatternsModal(this.app, this.plugin, this).open();
+	}
+
+	displayFoundProperties(container: HTMLElement, properties: string[]): void {
+		// Remove existing property display
+		const existingPropertiesDiv = container.querySelector('.properties-discovery-results');
+		if (existingPropertiesDiv) {
+			existingPropertiesDiv.remove();
+		}
+
+		if (properties.length === 0) {
+			const noPropertiesDiv = container.createDiv('properties-discovery-results');
+			noPropertiesDiv.createEl('p', {
+				text: 'No custom tag properties found in your vault.',
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		// Filter out properties that are already mapped in patterns
+		const mappedProperties = this.getMappedProperties();
+		const unmappedProperties = properties.filter(prop => !mappedProperties.has(prop)).sort((a, b) => 
+			a.toLowerCase().localeCompare(b.toLowerCase())
+		);
+
+		const propertiesDiv = container.createDiv('properties-discovery-results');
+		
+		if (unmappedProperties.length === 0) {
+			propertiesDiv.createEl('h4', {text: 'Found Properties'});
+			propertiesDiv.createEl('p', {
+				text: `All ${properties.length} discovered properties are already mapped in patterns above.`,
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		propertiesDiv.createEl('h4', {text: `Available Properties (${unmappedProperties.length})`});
+		
+		const subtitleText = mappedProperties.size > 0 
+			? `Click to add patterns • ${mappedProperties.size} already mapped, ${unmappedProperties.length} available`
+			: 'Click on any property to add it to a new property pattern';
+			
+		propertiesDiv.createEl('p', {
+			text: subtitleText,
+			cls: 'setting-item-description'
+		});
+
+		const propertyContainer = propertiesDiv.createDiv('property-container');
+		propertyContainer.style.display = 'flex';
+		propertyContainer.style.flexWrap = 'wrap';
+		propertyContainer.style.gap = '5px';
+		propertyContainer.style.marginTop = '10px';
+
+		unmappedProperties.forEach(property => {
+			const propertyEl = propertyContainer.createEl('span', {
+				text: property,
+				cls: 'property-pill'
+			});
+			
+			propertyEl.style.cssText = CSS_STYLES.TAG_PILL;
+
+			propertyEl.addEventListener('click', () => {
+				this.addPropertyPatternWithProperty(property);
+			});
+
+			propertyEl.addEventListener('mouseenter', () => {
+				propertyEl.style.opacity = '0.8';
+			});
+
+			propertyEl.addEventListener('mouseleave', () => {
+				propertyEl.style.opacity = '1';
+			});
+		});
+	}
+
+	getMappedProperties(): Set<string> {
+		const mappedProperties = new Set<string>();
+		if (this.plugin.settings.propertyRenamePatterns) {
+			for (const pattern of this.plugin.settings.propertyRenamePatterns) {
+				if (pattern.from && pattern.from.trim()) {
+					mappedProperties.add(pattern.from.trim());
+				}
+			}
+		}
+		return mappedProperties;
+	}
+
+	addPropertyPatternWithProperty(property: string): void {
+		if (!this.plugin.settings.propertyRenamePatterns) {
+			this.plugin.settings.propertyRenamePatterns = [];
+		}
+		this.plugin.settings.propertyRenamePatterns.push({ from: property, to: '' });
+		this.plugin.saveSettings();
+		this.display();
+		new Notice(`Added "${property}" to property patterns`);
+	}
+
+	createPropertyPatternHeaders(containerEl: HTMLElement): void {
+		const headerSetting = new Setting(containerEl)
+			.setClass('property-pattern-header');
+
+		// Create header layout
+		const headerControl = headerSetting.settingEl.querySelector('.setting-item-control');
+		if (headerControl instanceof HTMLElement) {
+			headerControl.innerHTML = '';
+			headerControl.style.cssText = CSS_STYLES.HEADER_CONTROL;
+
+			const fromHeader = headerControl.createEl('div', {text: 'From Property'});
+			fromHeader.style.width = '40%';
+
+			const toHeader = headerControl.createEl('div', {text: 'To Property'});
+			toHeader.style.width = '40%';
+
+			const actionHeader = headerControl.createEl('div', {text: 'Action'});
+			actionHeader.style.width = '20%';
+			actionHeader.style.textAlign = 'center';
+		}
+
+		// Hide the setting name area for headers
+		const settingInfo = headerSetting.settingEl.querySelector('.setting-item-info');
+		if (settingInfo instanceof HTMLElement) {
+			settingInfo.style.display = 'none';
+		}
+	}
+
+	createPropertyPatternSetting(containerEl: HTMLElement, pattern: PropertyRenamePattern, index: number): void {
+		const setting = new Setting(containerEl)
+			.addText(text => text
+				.setPlaceholder('From property name...')
+				.setValue(pattern.from)
+				.onChange(async (value) => {
+					if (this.plugin.settings.propertyRenamePatterns) {
+						this.plugin.settings.propertyRenamePatterns[index].from = value;
+						await this.plugin.saveSettings();
+					}
+				}))
+			.addText(text => text
+				.setPlaceholder('To property name...')
+				.setValue(pattern.to)
+				.onChange(async (value) => {
+					if (this.plugin.settings.propertyRenamePatterns) {
+						this.plugin.settings.propertyRenamePatterns[index].to = value;
+						await this.plugin.saveSettings();
+					}
+				}))
+			.addButton(button => button
+				.setIcon('trash')
+				.setTooltip('Remove property pattern')
+				.onClick(() => {
+					if (this.plugin.settings.propertyRenamePatterns) {
+						this.plugin.settings.propertyRenamePatterns.splice(index, 1);
+						this.plugin.saveSettings();
+						this.display();
+					}
+				}));
+
+		// Style the components to align with headers
+		const settingControl = setting.settingEl.querySelector('.setting-item-control');
+		if (settingControl instanceof HTMLElement) {
+			settingControl.style.cssText = CSS_STYLES.PATTERN_CONTROL;
+			
+			const elements = settingControl.children;
+			if (elements.length >= 3) {
+				(elements[0] as HTMLElement).style.width = '40%'; // From input
+				(elements[1] as HTMLElement).style.width = '40%'; // To input
+				(elements[2] as HTMLElement).style.width = '20%'; // Delete button
+				(elements[2] as HTMLElement).style.textAlign = 'center';
+			}
+		}
+
+		// Hide the setting name area
+		const settingInfo = setting.settingEl.querySelector('.setting-item-info');
+		if (settingInfo instanceof HTMLElement) {
+			settingInfo.style.display = 'none';
+		}
 	}
 }
