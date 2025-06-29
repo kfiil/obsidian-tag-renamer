@@ -257,6 +257,54 @@ tags: [work, workflow, work.done, "work-item"]
         expect(result).toContain('dot-tag');
         expect(result).toContain('tag_with_underscore'); // Unchanged
     });
+    test('should extract display text from markdown links', () => {
+        expect(processor.extractDisplayText('[Engineering Leadership](Engineering%20Leadership.md)')).toBe('Engineering Leadership');
+        expect(processor.extractDisplayText('[Software Engineering](path/to/file.md)')).toBe('Software Engineering');
+        expect(processor.extractDisplayText('regular tag')).toBe('regular tag');
+        expect(processor.extractDisplayText('[Simple](link.md)')).toBe('Simple');
+    });
+    test('should extract display text from markdown links in tag content', () => {
+        const content = `---
+tags:
+  - "[Engineering Leadership](Engineering%20Leadership.md)"
+  - "[Software Engineering](Software%20Engineering.md)"
+  - "regular tag"
+---
+# Test file`;
+        const tags = processor.extractTagsFromContent(content);
+        expect(tags).toEqual(['Engineering Leadership', 'Software Engineering', 'regular tag']);
+    });
+    test('should rename tags based on display text while preserving markdown links', () => {
+        const content = `---
+tags:
+  - "[Engineering Leadership](Engineering%20Leadership.md)"
+  - "[Software Engineering](Software%20Engineering.md)"
+  - "regular tag"
+---
+# Test file`;
+        const patterns = [
+            { search: 'Engineering Leadership', replace: 'Tech Leadership', removeMode: false }
+        ];
+        const result = processor.processFileContent(content, patterns);
+        // Should replace the display text but preserve the link
+        expect(result).toContain('[Tech Leadership](Engineering%20Leadership.md)');
+        expect(result).toContain('[Software Engineering](Software%20Engineering.md)');
+        expect(result).toContain('regular tag');
+    });
+    test('should remove tags based on display text from markdown links', () => {
+        const content = `---
+tags: ["[Engineering Leadership](Engineering%20Leadership.md)", "[Software Engineering](Software%20Engineering.md)", "regular tag"]
+---
+# Test file`;
+        const patterns = [
+            { search: 'Engineering Leadership', replace: '', removeMode: true }
+        ];
+        const result = processor.processFileContent(content, patterns);
+        // Should remove the tag entirely
+        expect(result).not.toContain('Engineering Leadership');
+        expect(result).toContain('[Software Engineering](Software%20Engineering.md)');
+        expect(result).toContain('regular tag');
+    });
     test('returns unchanged content when no matches', () => {
         const patterns = [
             { search: 'nonexistent', replace: 'something', removeMode: false }

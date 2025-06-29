@@ -7,6 +7,17 @@ export class TagProcessor {
 		return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 	}
 
+	/**
+	 * Extracts display text from markdown links
+	 * [Display Text](link) -> Display Text
+	 * Regular text -> Regular text (unchanged)
+	 */
+	extractDisplayText(tag: string): string {
+		const markdownLinkRegex = /^\[([^\]]+)\]\([^)]*\)$/;
+		const match = tag.match(markdownLinkRegex);
+		return match ? match[1] : tag;
+	}
+
 	extractTagsFromContent(content: string): string[] {
 		const tags: string[] = [];
 		const frontmatterMatch = content.match(REGEX_PATTERNS.FRONTMATTER);
@@ -20,7 +31,10 @@ export class TagProcessor {
 		if (arrayMatches) {
 			arrayMatches.forEach(line => {
 				const tagContent = line.replace(/^tags:\s*\[|\]$/g, '');
-				const tagList = tagContent.split(',').map(tag => tag.trim().replace(/['"]/g, ''));
+				const tagList = tagContent.split(',').map(tag => {
+					const cleanTag = tag.trim().replace(/['"]/g, '');
+					return this.extractDisplayText(cleanTag);
+				});
 				tags.push(...tagList.filter(tag => tag.length > 0));
 			});
 		}
@@ -32,8 +46,9 @@ export class TagProcessor {
 				const tagLines = block.match(REGEX_PATTERNS.TAG_LINE_MATCH);
 				if (tagLines) {
 					tagLines.forEach(line => {
-						const tag = line.replace(/^\s*-\s*/, '').trim().replace(/['"]/g, '');
-						if (tag.length > 0) tags.push(tag);
+						const cleanTag = line.replace(/^\s*-\s*/, '').trim().replace(/['"]/g, '');
+						const displayText = this.extractDisplayText(cleanTag);
+						if (displayText.length > 0) tags.push(displayText);
 					});
 				}
 			});
@@ -43,8 +58,9 @@ export class TagProcessor {
 		const singleMatches = frontmatter.match(REGEX_PATTERNS.SINGLE_TAG);
 		if (singleMatches) {
 			singleMatches.forEach(line => {
-				const tag = line.replace(/^tag:\s*/, '').trim().replace(/['"]/g, '');
-				if (tag.length > 0) tags.push(tag);
+				const cleanTag = line.replace(/^tag:\s*/, '').trim().replace(/['"]/g, '');
+				const displayText = this.extractDisplayText(cleanTag);
+				if (displayText.length > 0) tags.push(displayText);
 			});
 		}
 
@@ -119,13 +135,24 @@ export class TagProcessor {
 			
 			for (const pattern of compiledPatterns) {
 				if (pattern.removeMode) {
-					// Remove matching tags
-					tags = tags.filter((tag: string) => !pattern.regex.test(tag.trim()));
+					// Remove matching tags (check display text for markdown links)
+					tags = tags.filter((tag: string) => {
+						const displayText = this.extractDisplayText(tag.trim());
+						return !pattern.regex.test(displayText);
+					});
 				} else {
-					// Replace matching tags
+					// Replace matching tags (check display text for markdown links)
 					tags = tags.map((tag: string) => {
-						if (pattern.regex.test(tag.trim())) {
+						const displayText = this.extractDisplayText(tag.trim());
+						if (pattern.regex.test(displayText)) {
 							modified = true;
+							// If original was a markdown link, preserve link format with new text
+							if (tag.trim().includes('[') && tag.trim().includes('](')) {
+								const linkMatch = tag.trim().match(/^\[([^\]]+)\](\([^)]*\))$/);
+								if (linkMatch) {
+									return `[${pattern.replace}]${linkMatch[2]}`;
+								}
+							}
 							return pattern.replace;
 						}
 						return tag;
@@ -153,13 +180,24 @@ export class TagProcessor {
 				
 				for (const pattern of compiledPatterns) {
 					if (pattern.removeMode) {
-						// Remove matching tags
-						tags = tags.filter(tag => !pattern.regex.test(tag));
+						// Remove matching tags (check display text for markdown links)
+						tags = tags.filter(tag => {
+							const displayText = this.extractDisplayText(tag);
+							return !pattern.regex.test(displayText);
+						});
 					} else {
-						// Replace matching tags
+						// Replace matching tags (check display text for markdown links)
 						tags = tags.map(tag => {
-							if (pattern.regex.test(tag)) {
+							const displayText = this.extractDisplayText(tag);
+							if (pattern.regex.test(displayText)) {
 								modified = true;
+								// If original was a markdown link, preserve link format with new text
+								if (tag.includes('[') && tag.includes('](')) {
+									const linkMatch = tag.match(/^\[([^\]]+)\](\([^)]*\))$/);
+									if (linkMatch) {
+										return `[${pattern.replace}]${linkMatch[2]}`;
+									}
+								}
 								return pattern.replace;
 							}
 							return tag;
@@ -184,13 +222,21 @@ export class TagProcessor {
 		// Process single tag line (tag: tagname)
 		frontmatter = frontmatter.replace(REGEX_PATTERNS.SINGLE_TAG, (line, tag) => {
 			const cleanTag = tag.trim().replace(/['"]/g, '');
+			const displayText = this.extractDisplayText(cleanTag);
 			
 			for (const pattern of compiledPatterns) {
-				if (pattern.regex.test(cleanTag)) {
+				if (pattern.regex.test(displayText)) {
 					modified = true;
 					if (pattern.removeMode) {
 						return ''; // Remove the entire tag line
 					} else {
+						// If original was a markdown link, preserve link format with new text
+						if (cleanTag.includes('[') && cleanTag.includes('](')) {
+							const linkMatch = cleanTag.match(/^\[([^\]]+)\](\([^)]*\))$/);
+							if (linkMatch) {
+								return `tag: "[${pattern.replace}]${linkMatch[2]}"`;
+							}
+						}
 						return `tag: "${pattern.replace}"`;
 					}
 				}
