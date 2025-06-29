@@ -8,7 +8,8 @@ import { DuplicateRemovalConfirmationModal } from './src/ui/modals/duplicate-rem
 import { TagRenamerSettingTab } from './src/ui/settings/settings-tab';
 
 const DEFAULT_SETTINGS: TagRenamerSettings = {
-	renamePatterns: []
+	renamePatterns: [],
+	propertyRenamePatterns: []
 }
 
 export default class TagRenamerPlugin extends Plugin {
@@ -188,6 +189,14 @@ export default class TagRenamerPlugin extends Plugin {
 			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 			return { success: false, error: 'Invalid JSON format: ' + errorMessage };
 		}
+	}
+
+	async renameTagProperties(folder: TFolder): Promise<void> {
+		await this.fileService.renameTagProperties(folder, this.settings.propertyRenamePatterns || []);
+	}
+
+	async findCustomTagPropertiesInVault(): Promise<string[]> {
+		return await this.fileService.findCustomTagPropertiesInVault();
 	}
 }
 

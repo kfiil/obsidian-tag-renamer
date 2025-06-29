@@ -155,6 +155,11 @@ class ExpectAPI {
             throw new Error(`Expected ${this.actual} to be less than ${expected}`);
         }
     }
+    toBeDefined() {
+        if (this.actual === undefined || this.actual === null) {
+            throw new Error(`Expected value to be defined, got ${this.actual}`);
+        }
+    }
     toThrow(expectedError) {
         if (typeof this.actual !== 'function') {
             throw new Error('Expected a function that throws');
