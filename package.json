@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"build:tests": "tsc src/tests/*.ts --outDir . --target es2018 --module commonjs --moduleResolution node --skipLibCheck",
+		"build:tests": "tsc src/tests/*.ts tests/**/*.ts --outDir . --target es2018 --module commonjs --moduleResolution node --skipLibCheck",
 		"test": "npm run build && npm run build:tests && node tests/standalone-runner.js",
 		"test:watch": "npm run build && npm run test",
 		"test:tagprocessor": "npm run build && npm run build:tests && node tests/standalone-runner.js",
