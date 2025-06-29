@@ -146,14 +146,8 @@ export class TagProcessor {
 						const displayText = this.extractDisplayText(tag.trim());
 						if (pattern.regex.test(displayText)) {
 							modified = true;
-							// If original was a markdown link, preserve link format with new text
-							if (tag.trim().includes('[') && tag.trim().includes('](')) {
-								const linkMatch = tag.trim().match(/^\[([^\]]+)\](\([^)]*\))$/);
-								if (linkMatch) {
-									return `[${pattern.replace}]${linkMatch[2]}`;
-								}
-							}
-							return pattern.replace;
+							// Convert to proper tag format (replace spaces with underscores, drop links)
+							return pattern.replace.replace(/\s+/g, '_');
 						}
 						return tag;
 					});
@@ -191,14 +185,8 @@ export class TagProcessor {
 							const displayText = this.extractDisplayText(tag);
 							if (pattern.regex.test(displayText)) {
 								modified = true;
-								// If original was a markdown link, preserve link format with new text
-								if (tag.includes('[') && tag.includes('](')) {
-									const linkMatch = tag.match(/^\[([^\]]+)\](\([^)]*\))$/);
-									if (linkMatch) {
-										return `[${pattern.replace}]${linkMatch[2]}`;
-									}
-								}
-								return pattern.replace;
+								// Convert to proper tag format (replace spaces with underscores, drop links)
+								return pattern.replace.replace(/\s+/g, '_');
 							}
 							return tag;
 						});
@@ -230,14 +218,8 @@ export class TagProcessor {
 					if (pattern.removeMode) {
 						return ''; // Remove the entire tag line
 					} else {
-						// If original was a markdown link, preserve link format with new text
-						if (cleanTag.includes('[') && cleanTag.includes('](')) {
-							const linkMatch = cleanTag.match(/^\[([^\]]+)\](\([^)]*\))$/);
-							if (linkMatch) {
-								return `tag: "[${pattern.replace}]${linkMatch[2]}"`;
-							}
-						}
-						return `tag: "${pattern.replace}"`;
+						// Convert to proper tag format (replace spaces with underscores, drop links)
+						return `tag: "${pattern.replace.replace(/\s+/g, '_')}"`;
 					}
 				}
 			}

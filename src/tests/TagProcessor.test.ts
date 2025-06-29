@@ -317,7 +317,7 @@ tags:
         expect(tags).toEqual(['Engineering Leadership', 'Software Engineering', 'regular tag']);
     });
 
-    test('should rename tags based on display text while preserving markdown links', () => {
+    test('should rename tags based on display text and convert to proper tag format', () => {
         const content = `---
 tags:
   - "[Engineering Leadership](Engineering%20Leadership.md)"
@@ -332,8 +332,9 @@ tags:
 
         const result = processor.processFileContent(content, patterns);
         
-        // Should replace the display text but preserve the link
-        expect(result).toContain('[Tech Leadership](Engineering%20Leadership.md)');
+        // Should replace the display text and convert to proper tag format (drop link, use underscores)
+        expect(result).toContain('Tech_Leadership');
+        expect(result).not.toContain('[Tech Leadership](Engineering%20Leadership.md)');
         expect(result).toContain('[Software Engineering](Software%20Engineering.md)');
         expect(result).toContain('regular tag');
     });
