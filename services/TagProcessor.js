@@ -94,7 +94,7 @@ class TagProcessor {
             regex: new RegExp(`^${this.escapeRegex(p.search)}$`)
         }));
         // Process tag arrays (tags: [tag1, tag2])
-        frontmatter = frontmatter.replace(patterns_1.REGEX_PATTERNS.TAG_ARRAY, (line, tagContent) => {
+        frontmatter = frontmatter.replace(patterns_1.REGEX_PATTERNS.TAG_ARRAY, (_line, tagContent) => {
             let tags = tagContent.split(',').map((tag) => tag.trim().replace(/['"]/g, ''));
             let originalLength = tags.length;
             for (const pattern of compiledPatterns) {

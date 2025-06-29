@@ -34,7 +34,7 @@ async function runStandaloneTests() {
         totalDuration += summary1.totalDuration;
     }
     catch (error) {
-        console.error('❌ TagProcessor tests failed to load:', error.message);
+        console.error('❌ TagProcessor tests failed to load:', error instanceof Error ? error.message : String(error));
         totalFailed += 1;
     }
     // Test basic integration scenarios
@@ -48,7 +48,7 @@ async function runStandaloneTests() {
         totalDuration += summary2.totalDuration;
     }
     catch (error) {
-        console.error('❌ Integration tests failed to load:', error.message);
+        console.error('❌ Integration tests failed to load:', error instanceof Error ? error.message : String(error));
         totalFailed += 1;
     }
     // Print final summary
@@ -201,7 +201,7 @@ async function createIntegrationTests() {
                 { patterns: "not-array" },
                 { patterns: [{ search: 123 }] }
             ];
-            invalidData.forEach((data, index) => {
+            invalidData.forEach((data) => {
                 let isValid = false;
                 try {
                     isValid = data !== null &&

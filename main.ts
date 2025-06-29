@@ -1,7 +1,6 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Menu } from 'obsidian';
 import { RenamePattern, TagRenamerSettings, ImportValidationResult, ImportResult, ExportData } from './src/types/interfaces';
 import { FileService } from './src/services/FileService';
-import { TagProcessor } from './src/services/TagProcessor';
 import { CSS_STYLES } from './src/constants/patterns';
 
 const DEFAULT_SETTINGS: TagRenamerSettings = {
@@ -9,19 +8,17 @@ const DEFAULT_SETTINGS: TagRenamerSettings = {
 }
 
 export default class TagRenamerPlugin extends Plugin {
-	settings: TagRenamerSettings;
-	private fileService: FileService;
-	private tagProcessor: TagProcessor;
+	settings!: TagRenamerSettings;
+	private fileService!: FileService;
 
 	async onload() {
 		await this.loadSettings();
 		
 		// Initialize services
 		this.fileService = new FileService(this.app);
-		this.tagProcessor = new TagProcessor();
 
 		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('tag', 'Tag Renamer', (evt: MouseEvent) => {
+		this.addRibbonIcon('tag', 'Tag Renamer', () => {
 			// Called when the user clicks the icon.
 			new Notice('Tag Renamer is active!');
 		});
@@ -44,7 +41,7 @@ export default class TagRenamerPlugin extends Plugin {
 		this.addCommand({
 			id: 'remove-duplicate-tags-current',
 			name: 'Remove duplicate tags from current file',
-			editorCallback: async (editor: Editor, ctx) => {
+			editorCallback: async (_editor: Editor, ctx) => {
 				const view = ctx as MarkdownView;
 				const file = view.file;
 				if (!file) {
@@ -347,7 +344,7 @@ class TagRenamerSettingTab extends PluginSettingTab {
 						this.displayFoundTags(tagDiscoveryContainer);
 						new Notice(`Found ${this.allTags.length} unique tags`);
 					} catch (error) {
-						new Notice('Error scanning vault: ' + error.message);
+						new Notice('Error scanning vault: ' + (error instanceof Error ? error.message : String(error)));
 					}
 					button.setButtonText('Scan Vault');
 					button.setDisabled(false);
@@ -672,7 +669,7 @@ class ImportPatternsModal extends Modal {
 		modeLabel.style.display = 'block';
 		modeLabel.style.marginBottom = '10px';
 
-		const replaceRadio = modeContainer.createEl('input', {
+		modeContainer.createEl('input', {
 			type: 'radio',
 			attr: { name: 'importMode', value: 'replace', checked: 'checked' }
 		});
@@ -715,7 +712,7 @@ class ImportPatternsModal extends Modal {
 							previewLabel.textContent = 'Error:';
 						}
 					} catch (error) {
-						previewContent.textContent = `Invalid JSON: ${error.message}`;
+						previewContent.textContent = `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`;
 						previewContainer.style.display = 'block';
 						previewLabel.textContent = 'Error:';
 					}

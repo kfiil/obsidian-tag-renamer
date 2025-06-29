@@ -357,9 +357,6 @@ tags: [tag0, tag1, tag2, tag25, tag49, other]
         expect(duration).toBeLessThan(50); // Should complete in < 50ms
     });
     test('regex compilation is efficient', () => {
-        const patterns = [
-            { search: 'test.tag', replace: 'new', removeMode: false }
-        ];
         const startTime = performance.now();
         for (let i = 0; i < 100; i++) {
             processor.escapeRegex('test.tag+name*special[chars]');

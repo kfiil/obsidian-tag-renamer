@@ -1,4 +1,4 @@
-import { TFile } from 'obsidian';
+// Import removed - TFile not used in this module
 import { RenamePattern } from '../types/interfaces';
 import { REGEX_PATTERNS } from '../constants/patterns';
 
@@ -113,7 +113,7 @@ export class TagProcessor {
 		}));
 
 		// Process tag arrays (tags: [tag1, tag2])
-		frontmatter = frontmatter.replace(REGEX_PATTERNS.TAG_ARRAY, (line, tagContent) => {
+		frontmatter = frontmatter.replace(REGEX_PATTERNS.TAG_ARRAY, (_line, tagContent) => {
 			let tags = tagContent.split(',').map((tag: string) => tag.trim().replace(/['"]/g, ''));
 			let originalLength = tags.length;
 			

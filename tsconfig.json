@@ -9,11 +9,21 @@
     "module": "ESNext",
     "target": "ES2018",
     "allowJs": true,
+    
+    // Strict mode settings - CLAUDE.md compliance
+    "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,
-    "noImplicitReturns": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
     "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    
     "moduleResolution": "node",
     "importHelpers": true,
     "isolatedModules": true,
