@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
+import { copyFileSync, mkdirSync, existsSync } from "fs";
 
 const banner =
 `/*
@@ -37,12 +38,23 @@ const context = await esbuild.context({
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
-	outfile: "main.js",
+	outfile: prod ? "obsidian-tag-renamer/main.js" : "main.js",
 	minify: prod,
 });
 
 if (prod) {
 	await context.rebuild();
+	
+	// Create production folder if it doesn't exist
+	if (!existsSync("obsidian-tag-renamer")) {
+		mkdirSync("obsidian-tag-renamer");
+	}
+	
+	// Copy required files to production folder
+	copyFileSync("manifest.json", "obsidian-tag-renamer/manifest.json");
+	copyFileSync("versions.json", "obsidian-tag-renamer/versions.json");
+	
+	console.log("✅ Production build complete in obsidian-tag-renamer/ folder");
 	process.exit(0);
 } else {
 	await context.watch();
