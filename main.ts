@@ -1,24 +1,32 @@
 import { Editor, MarkdownView, Notice, Plugin, TFolder, TFile, Menu } from 'obsidian';
 import { RenamePattern, TagRenamerSettings, ImportValidationResult, ImportResult, ExportData } from './src/types/interfaces';
 import { FileService } from './src/services/FileService';
+import { TocService } from './src/services/TocService';
 import { RenameConfirmationModal } from './src/ui/modals/rename-confirmation-modal';
 import { DuplicateRemovalConfirmationModal } from './src/ui/modals/duplicate-removal-modal';
 import { TagRenamerSettingTab } from './src/ui/settings/settings-tab';
 
 const DEFAULT_SETTINGS: TagRenamerSettings = {
 	renamePatterns: [],
-	propertyRenamePatterns: []
+	propertyRenamePatterns: [],
+	tocOptions: {
+		maxDepth: 3,
+		includeLinks: true,
+		tocTitle: 'Table of Contents'
+	}
 }
 
 export default class TagRenamerPlugin extends Plugin {
 	settings!: TagRenamerSettings;
 	private fileService!: FileService;
+	private tocService!: TocService;
 
 	async onload() {
 		await this.loadSettings();
 		
 		// Initialize services
 		this.fileService = new FileService(this.app);
+		this.tocService = new TocService(this.app);
 
 		// This creates an icon in the left ribbon.
 		this.addRibbonIcon('tag', 'Tag Renamer', () => {
@@ -54,6 +62,21 @@ export default class TagRenamerPlugin extends Plugin {
 				await this.removeDuplicatesFromFile(file);
 			}
 		});
+
+		// Add command to insert/update TOC in current file
+		this.addCommand({
+			id: 'insert-toc-current',
+			name: 'Insert/Update TOC in current file',
+			editorCallback: async (_editor: Editor, ctx) => {
+				const view = ctx as MarkdownView;
+				const file = view.file;
+				if (!file) {
+					new Notice('No active file');
+					return;
+				}
+				await this.insertTocInFile(file);
+			}
+		});
 		
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new TagRenamerSettingTab(this.app, this));
@@ -87,6 +110,15 @@ export default class TagRenamerPlugin extends Plugin {
 							.setIcon('file-text')
 							.onClick(() => {
 								this.showPropertyRenameConfirmation(folder);
+							});
+					});
+					
+					menu.addItem((item) => {
+						item
+							.setTitle('Insert/Update TOC in folder')
+							.setIcon('list')
+							.onClick(() => {
+								this.insertTocInFolder(folder);
 							});
 					});
 				}
@@ -253,6 +285,59 @@ export default class TagRenamerPlugin extends Plugin {
 
 	async findCustomTagPropertiesInVault(): Promise<string[]> {
 		return await this.fileService.findCustomTagPropertiesInVault();
+	}
+
+	async insertTocInFile(file: TFile): Promise<void> {
+		const tocOptions = this.settings.tocOptions || DEFAULT_SETTINGS.tocOptions!;
+		const success = await this.tocService.insertTocInFile(file, tocOptions);
+		
+		if (success) {
+			new Notice(`TOC updated in ${file.name}`);
+		} else {
+			// Check if file has headings
+			const content = await this.app.vault.read(file);
+			if (!this.tocService.hasHeadings(content)) {
+				new Notice(`No headings found in ${file.name}`);
+			} else {
+				new Notice(`No changes needed in ${file.name}`);
+			}
+		}
+	}
+
+	async insertTocInFolder(folder: TFolder): Promise<void> {
+		const tocOptions = this.settings.tocOptions || DEFAULT_SETTINGS.tocOptions!;
+		let processedCount = 0;
+		let updatedCount = 0;
+
+		const processFile = async (file: TFile) => {
+			if (file.extension === 'md') {
+				processedCount++;
+				const content = await this.app.vault.read(file);
+				
+				if (this.tocService.hasHeadings(content)) {
+					const success = await this.tocService.insertTocInFile(file, tocOptions);
+					if (success) {
+						updatedCount++;
+					}
+				}
+			}
+		};
+
+		const processFolder = async (currentFolder: TFolder) => {
+			// Process files in current folder
+			for (const child of currentFolder.children) {
+				if (child instanceof TFile) {
+					await processFile(child);
+				} else if (child instanceof TFolder) {
+					await processFolder(child);
+				}
+			}
+		};
+
+		new Notice('Inserting/updating TOCs in folder...');
+		await processFolder(folder);
+		
+		new Notice(`TOC processing complete: ${updatedCount} files updated out of ${processedCount} processed`);
 	}
 }
 

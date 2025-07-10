@@ -226,6 +226,15 @@ class ExpectAPI {
         }
     }
 
+    toHaveLength(expected: number): void {
+        if (!this.actual || typeof this.actual.length !== 'number') {
+            throw new Error(`Expected ${JSON.stringify(this.actual)} to have a length property`);
+        }
+        if (this.actual.length !== expected) {
+            throw new Error(`Expected length ${expected}, got ${this.actual.length}`);
+        }
+    }
+
     get not() {
         return {
             toBe: (expected: any) => {

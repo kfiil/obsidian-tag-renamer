@@ -9,9 +9,16 @@ export interface PropertyRenamePattern {
 	to: string;   // Target property name (e.g., "tags")
 }
 
+export interface TocOptions {
+	maxDepth: number;
+	includeLinks: boolean;
+	tocTitle: string;
+}
+
 export interface TagRenamerSettings {
 	renamePatterns: RenamePattern[];
 	propertyRenamePatterns?: PropertyRenamePattern[]; // Optional for backward compatibility
+	tocOptions?: TocOptions; // Optional for backward compatibility
 }
 
 export interface ImportValidationResult {
